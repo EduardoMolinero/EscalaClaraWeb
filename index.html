@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a7370">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Escala Clara">
+  <meta name="description" content="Organize seus plantões localmente, sem contas ou assinaturas.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/app-icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/app-icon.svg">
+  <link rel="stylesheet" href="styles.css">
+  <title>Escala Clara</title>
+</head>
+<body>
+  <div class="app-shell">
+    <main id="app" aria-live="polite"></main>
+    <nav id="tab-bar" class="tab-bar" aria-label="Navegacao principal"></nav>
+  </div>
+  <div id="modal-root"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <input id="import-input" type="file" accept=".escalaclara,application/json" hidden>
+  <script src="app.js" defer></script>
+</body>
+</html>
