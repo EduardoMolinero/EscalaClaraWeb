@@ -48,7 +48,8 @@
     selectedDay: dateKey(new Date()),
     modal: null,
     pendingArchive: null,
-    isDarkMode: loadTheme()
+    isDarkMode: loadTheme(),
+    summaryMonth: startOfMonth(new Date())
   };
 
   let toastTimer;
@@ -497,40 +498,47 @@
   }
 
   function renderSummary() {
-    const allTotals = totals();
-    const groupsByMonth = new Map();
-    for (const shift of state.shifts) {
+    const currentMonth = state.summaryMonth;
+    const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, "0")}`;
+    const monthShifts = state.shifts.filter((shift) => {
       const date = validDate(shift.day);
-      if (!date) continue;
-      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-      if (!groupsByMonth.has(key)) groupsByMonth.set(key, { date: new Date(date.getFullYear(), date.getMonth(), 1), shifts: [] });
-      groupsByMonth.get(key).shifts.push(shift);
-    }
-    const groups = [...groupsByMonth.values()].sort((left, right) => right.date - left.date);
-    const rows = groups.length ? groups.map((group) => {
-      const groupTotals = totals(group.shifts);
+      return date && `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}` === monthKey;
+    });
+    const monthTotals = totals(monthShifts);
+
+    const nextMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
+    const now = new Date();
+    const isCurrentOrFuture = nextMonth.getFullYear() > now.getFullYear() || (nextMonth.getFullYear() === now.getFullYear() && nextMonth.getMonth() > now.getMonth());
+    const showShifts = monthShifts.length ? monthShifts.map((shift) => {
+      const date = validDate(shift.day);
+      const startTime = timeFromISO(shift.startsAt);
+      const endTime = timeFromISO(shift.endsAt);
       return `<li class="summary-row">
         <div class="summary-row-main">
-          <strong>${formatMonth(group.date)}</strong>
-          <span>${group.shifts.length} plantão(ões)</span>
+          <strong>${escapeHTML(shift.title)}</strong>
+          <span>${date ? dateKey(date).split("-").reverse().join("/") : ""} ${startTime} - ${endTime}</span>
         </div>
         <div class="summary-row-values">
-          <strong>${formatMoney(groupTotals.total)}</strong>
-          <span class="${groupTotals.unpaid === 0 ? "paid-text" : "unpaid-text"}">${formatMoney(groupTotals.unpaid)}</span>
+          <strong>${formatMoney(shift.amount)}</strong>
+          <span class="${shift.isPaid ? "paid-text" : "unpaid-text"}">${shift.isPaid ? "Pago" : "A receber"}</span>
         </div>
       </li>`;
-    }).join("") : renderEmptyState("emptyChart", "Sem plantões ainda", "Os totais aparecerao aqui quando voce registrar sua escala.");
+    }).join("") : `<li style="padding: 24px; text-align: center; color: var(--muted);">${icon("emptyCalendar")}<span>Nenhum plantao neste mes</span></li>`;
 
     return `<section class="screen">
-      ${renderScreenHeader("Totais")}
+      ${renderScreenHeader("Pagamentos")}
       <div class="content">
-        <section class="summary-cards" aria-label="Resumo financeiro">
-          <article class="amount-card"><span>TOTAL</span><strong>${formatMoney(allTotals.total)}</strong></article>
-          <article class="amount-card paid"><span>RECEBIDO</span><strong>${formatMoney(allTotals.paid)}</strong></article>
-          <article class="amount-card unpaid"><span>A RECEBER</span><strong>${formatMoney(allTotals.unpaid)}</strong></article>
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 0;">
+          <button class="icon-button" data-action="summary-prev-month" aria-label="Mes anterior">${icon("chevronLeft")}</button>
+          <strong style="font-size: 18px;">${formatMonth(currentMonth)}</strong>
+          <button class="icon-button" data-action="summary-next-month" aria-label="Mes seguinte" ${isCurrentOrFuture ? "disabled" : ""}>${icon("chevronRight")}</button>
+        </div>
+        <section class="summary-cards" aria-label="Resumo do mes">
+          <article class="amount-card"><span>TOTAL</span><strong>${formatMoney(monthTotals.total)}</strong></article>
+          <article class="amount-card paid"><span>RECEBIDO</span><strong>${formatMoney(monthTotals.paid)}</strong></article>
+          <article class="amount-card unpaid"><span>A RECEBER</span><strong>${formatMoney(monthTotals.unpaid)}</strong></article>
         </section>
-        <h2 class="section-title">Por mes</h2>
-        <ul class="summary-list">${rows}</ul>
+        <ul class="summary-list">${showShifts}</ul>
       </div>
     </section>`;
   }
@@ -580,7 +588,7 @@
   function renderTabBar() {
     const tabs = [
       ["calendar", "Calendario", "calendar"],
-      ["summary", "Totais", "chart"],
+      ["summary", "Pagamentos", "chart"],
       ["backup", "Backup", "transfer"]
     ];
     return tabs.map(([id, label, iconName]) => `<button class="tab-button ${state.tab === id ? "active" : ""}" data-action="select-tab" data-tab="${id}" aria-current="${state.tab === id ? "page" : "false"}">${icon(iconName)}<span>${label}</span></button>`).join("");
@@ -620,6 +628,7 @@
     }
     if (state.modal.type === "saved-shifts") {
       elements.modalRoot.innerHTML = renderSavedShiftsDialog(state.modal);
+      if (state.modal.mode === "edit") setupAmountInput();
     }
   }
 
@@ -652,35 +661,37 @@
   }
 
   function setupAmountInput() {
-    const input = document.getElementById("shift-amount");
-    if (!input) return;
-    
-    input.addEventListener("input", (e) => {
-      const cursorPos = input.selectionStart;
-      const oldValue = input.value;
-      const rawValue = input.value.replace(/\D/g, "");
-      const formattedValue = formatCurrencyAsYouType(rawValue);
-      input.value = formattedValue;
-      input.dataset.rawAmount = rawValue ? (Number(rawValue) / 100).toFixed(2) : "0";
+    const ids = ["shift-amount", "saved-amount"];
+    for (const id of ids) {
+      const input = document.getElementById(id);
+      if (!input) continue;
       
-      // Adjust cursor position
-      const newLength = formattedValue.length;
-      const oldLength = oldValue.length;
-      const diff = newLength - oldLength;
-      input.setSelectionRange(cursorPos + diff, cursorPos + diff);
-    });
+      input.addEventListener("input", (e) => {
+        const cursorPos = input.selectionStart;
+        const oldValue = input.value;
+        const rawValue = input.value.replace(/\D/g, "");
+        const formattedValue = formatCurrencyAsYouType(rawValue);
+        input.value = formattedValue;
+        input.dataset.rawAmount = rawValue ? (Number(rawValue) / 100).toFixed(2) : "0";
+        
+        const newLength = formattedValue.length;
+        const oldLength = oldValue.length;
+        const diff = newLength - oldLength;
+        input.setSelectionRange(cursorPos + diff, cursorPos + diff);
+      });
 
-    input.addEventListener("focus", () => {
-      if (!input.value) {
-        input.value = "R$ 0,00";
-      }
-    });
+      input.addEventListener("focus", () => {
+        if (!input.value) {
+          input.value = "R$ 0,00";
+        }
+      });
 
-    input.addEventListener("blur", () => {
-      if (input.value === "R$ 0,00") {
-        input.value = "";
-      }
-    });
+      input.addEventListener("blur", () => {
+        if (input.value === "R$ 0,00") {
+          input.value = "";
+        }
+      });
+    }
   }
 
   function renderShiftForm(modal) {
@@ -690,10 +701,12 @@
       title: modal.prefill?.title || "Plantao",
       startsAt: modal.prefill?.startsAt || isoForDayAndTime(day, "07:00"),
       endsAt: modal.prefill?.endsAt || isoForDayAndTime(day, "19:00"),
-      amount: 0,
+      amount: modal.prefill?.amount ?? 0,
       isPaid: false,
       notes: "",
-      ...DEFAULT_COLOR
+      red: modal.prefill?.red ?? DEFAULT_COLOR.red,
+      green: modal.prefill?.green ?? DEFAULT_COLOR.green,
+      blue: modal.prefill?.blue ?? DEFAULT_COLOR.blue
     };
     const fromSavedList = !!modal.prefill;
     const formTitle = editing ? "Editar plantao" : "Novo plantao";
@@ -821,22 +834,27 @@
     const isEditing = modal.mode === "edit";
     const savedShifts = state.savedShifts;
     
-    const shiftRows = savedShifts.length ? savedShifts.map((saved, index) => `
-      <li class="saved-shift-row" data-index="${index}" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: var(--surface); border-bottom: 1px solid var(--line); gap: 10px;">
-        <div style="flex: 1; min-width: 0;">
-          <strong style="display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHTML(saved.title)}</strong>
-          <span style="display: block; margin-top: 2px; color: var(--muted); font-size: 12px;">${saved.startTime} - ${saved.endTime}</span>
+    const shiftRows = savedShifts.length ? savedShifts.map((saved, index) => {
+      const colorHex = (saved.red != null) ? rgbToHex({ red: saved.red, green: saved.green, blue: saved.blue }) : "";
+      return `<li class="saved-shift-row" data-index="${index}" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: var(--surface); border-bottom: 1px solid var(--line); gap: 10px;">
+        <div style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;">
+          ${colorHex ? `<span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: ${colorHex}; flex-shrink: 0;"></span>` : ""}
+          <div style="flex: 1; min-width: 0;">
+            <strong style="display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHTML(saved.title)}</strong>
+            <span style="display: block; margin-top: 2px; color: var(--muted); font-size: 12px;">${saved.startTime} - ${saved.endTime}${saved.amount ? ` · ${formatMoney(saved.amount)}` : ""}</span>
+          </div>
         </div>
         <div style="display: flex; gap: 4px;">
           <button type="button" class="row-action" data-action="select-saved-shift" data-index="${index}" aria-label="Selecionar ${escapeHTML(saved.title)}">${icon("check")}</button>
           <button type="button" class="row-action" data-action="edit-saved-shift" data-index="${index}" aria-label="Editar ${escapeHTML(saved.title)}">${icon("palette")}</button>
           <button type="button" class="row-action delete" data-action="delete-saved-shift" data-index="${index}" aria-label="Excluir ${escapeHTML(saved.title)}">${icon("trash")}</button>
         </div>
-      </li>
-    `).join("") : `<li class="empty-shifts" style="padding: 24px; text-align: center; color: var(--muted);">${icon("emptyCalendar")}<span>Nenhum plantão salvo</span></li>`;
+      </li>`;
+    }).join("") : `<li class="empty-shifts" style="padding: 24px; text-align: center; color: var(--muted);">${icon("emptyCalendar")}<span>Nenhum plantão salvo</span></li>`;
     
     if (isEditing) {
       const saved = savedShifts[modal.editIndex];
+      const savedColor = { red: saved?.red, green: saved?.green, blue: saved?.blue };
       return `<div class="modal-backdrop dialog-backdrop" role="presentation">
         <form class="dialog" id="saved-shift-form" data-index="${modal.editIndex}" role="dialog" aria-modal="true" aria-label="Editar plantão salvo">
           <div class="dialog-copy">
@@ -856,10 +874,18 @@
                 <label for="saved-end">Horario de fim</label>
                 <input id="saved-end" name="endTime" type="time" value="${escapeHTML(saved?.endTime || "19:00")}" required>
               </div>
+              <div class="form-row" style="flex-direction: column; align-items: stretch; gap: 8px; padding: 12px 0;">
+                <label for="saved-amount">Valor</label>
+                <input id="saved-amount" name="amount" type="text" inputmode="numeric" value="${formatCurrencyAsYouType((saved?.amount || 0) * 100)}" placeholder="R$ 0,00">
+              </div>
+              <div class="form-row" style="flex-direction: column; align-items: stretch; gap: 8px; padding: 12px 0;">
+                <label for="saved-color">Cor do plantao</label>
+                <input id="saved-color" name="color" type="color" value="${rgbToHex(savedColor.red != null ? savedColor : DEFAULT_COLOR)}">
+              </div>
             </div>
           </div>
           <div class="dialog-actions">
-            <button type="submit">Salvar alterações</button>
+            <button type="submit">Salvar alteracoes</button>
             <button type="button" data-action="close-modal">Cancelar</button>
           </div>
         </form>
@@ -980,6 +1006,15 @@
       render();
       return;
     }
+    if (action === "summary-prev-month" || action === "summary-next-month") {
+      state.summaryMonth = new Date(
+        state.summaryMonth.getFullYear(),
+        state.summaryMonth.getMonth() + (action === "summary-next-month" ? 1 : -1),
+        1
+      );
+      render();
+      return;
+    }
     if (action === "previous-month" || action === "next-month") {
       state.displayedMonth = new Date(
         state.displayedMonth.getFullYear(),
@@ -1095,7 +1130,7 @@
         type: "shift-form",
         day,
         id: shiftModal?.id || null,
-        prefill: { title: saved.title, startsAt, endsAt }
+        prefill: { title: saved.title, startsAt, endsAt, amount: saved.amount || 0, red: saved.red, green: saved.green, blue: saved.blue }
       };
       renderModal();
       return;
@@ -1224,10 +1259,9 @@
     if (!current && !form.dataset.fromSavedList) {
       const startTime = timeFromISO(startsAt);
       const endTime = timeFromISO(endsAt);
-      // Check if this exact combination already exists in saved shifts
       const exists = state.savedShifts.some(s => s.title === title && s.startTime === startTime && s.endTime === endTime);
       if (!exists) {
-        state.savedShifts.push({ title, startTime, endTime });
+        state.savedShifts.push({ title, startTime, endTime, amount, red: color.red, green: color.green, blue: color.blue });
         saveSavedShifts();
       }
     }
@@ -1241,6 +1275,9 @@
     const title = String(data.get("title") || "").trim();
     const startTime = String(data.get("startTime") || "").trim();
     const endTime = String(data.get("endTime") || "").trim();
+    const amount = parseCurrencyMasked(data.get("amount"));
+    const colorHex = String(data.get("color") || "");
+    const color = hexToRgb(colorHex);
     const index = Number(form.dataset.index);
 
     if (!title || !startTime || !endTime) {
@@ -1248,7 +1285,7 @@
       return;
     }
 
-    const savedShift = { title, startTime, endTime };
+    const savedShift = { title, startTime, endTime, amount: Number.isFinite(amount) ? amount : 0, red: color.red, green: color.green, blue: color.blue };
 
     if (index >= 0 && index < state.savedShifts.length) {
       state.savedShifts[index] = savedShift;
