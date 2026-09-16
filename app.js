@@ -348,7 +348,7 @@
 
     const selectedShifts = shiftsForDay(state.selectedDay);
     const shiftRows = selectedShifts.length ? selectedShifts.map((shift) => `
-      <li class="shift-row">
+      <li class="shift-row" data-action="edit-shift" data-id="${shift.id}" tabindex="0" role="button" aria-label="Editar ${escapeHTML(shift.title)}">
         <div class="shift-info">
           <strong>${escapeHTML(shift.title)}</strong>
           <span>${formatShiftDateTime(shift.startsAt)} - ${formatShiftDateTime(shift.endsAt)}</span>
@@ -367,15 +367,17 @@
     return `<section class="screen">
       ${renderScreenHeader("Minha escala", `<button class="icon-button" data-action="new-shift" data-day="${state.selectedDay}" aria-label="Novo plantao">${icon("plus")}</button>`)}
       <div class="content">
-        <section class="calendar-card" aria-label="Calendario mensal">
-          <div class="month-controls">
-            <button class="month-button" data-action="previous-month" aria-label="Mes anterior">${icon("chevronLeft")}</button>
-            <h2>${formatMonth(month)}</h2>
-            <button class="month-button" data-action="next-month" aria-label="Proximo mes">${icon("chevronRight")}</button>
-          </div>
-          <div class="weekday-grid">${weekdays}</div>
-          <div class="calendar-grid">${dayCells}</div>
-        </section>
+        <div class="calendar-wrapper">
+          <section class="calendar-card" aria-label="Calendario mensal">
+            <div class="month-controls">
+              <button class="month-button" data-action="previous-month" aria-label="Mes anterior">${icon("chevronLeft")}</button>
+              <h2>${formatMonth(month)}</h2>
+              <button class="month-button" data-action="next-month" aria-label="Proximo mes">${icon("chevronRight")}</button>
+            </div>
+            <div class="weekday-grid">${weekdays}</div>
+            <div class="calendar-grid">${dayCells}</div>
+          </section>
+        </div>
         <section class="shifts-panel" aria-label="Plantões do dia selecionado">
           <div style="display: flex; justify-content: space-between; align-items: center; margin: 8px 16px 4px;">
             <h2 class="section-title" style="margin: 0; text-align: center; flex: 1;">${formatDayTitle(parseDateInput(state.selectedDay))}</h2>
@@ -504,6 +506,18 @@
     }
   }
 
+  function formatCurrencyInput(value) {
+    const num = Number(value);
+    if (isNaN(num)) return "";
+    return num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function parseCurrencyInput(value) {
+    const clean = String(value).replace(/[^\d,]/g, "").replace(",", ".");
+    const num = Number(clean);
+    return isNaN(num) ? 0 : num;
+  }
+
   function renderShiftForm(modal) {
     const editing = modal.id ? state.shifts.find((shift) => shift.id === modal.id) : null;
     const day = editing ? dateFromISO(editing.day) : (modal.day || dateKey(new Date()));
@@ -537,7 +551,10 @@
             <section class="form-section">
               <h3 class="section-title">Pagamento</h3>
               <div class="form-list">
-                <div class="form-row"><label for="shift-amount">Valor</label><input id="shift-amount" name="amount" type="number" min="0" step="0.01" inputmode="decimal" value="${Number(defaults.amount)}" required></div>
+                <div class="form-row">
+                  <label for="shift-amount">Valor</label>
+                  <input id="shift-amount" name="amount" type="text" inputmode="decimal" value="${formatCurrencyInput(defaults.amount)}" required placeholder="R$ 0,00">
+                </div>
                 <div class="form-row"><span>Ja foi pago</span><label class="switch" aria-label="Ja foi pago"><input name="isPaid" type="checkbox" ${defaults.isPaid ? "checked" : ""}><span></span></label></div>
               </div>
             </section>
@@ -729,6 +746,7 @@
     if (action === "delete-shift") {
       state.shifts = state.shifts.filter((shift) => shift.id !== target.dataset.id);
       persistShifts();
+      state.modal = null;
       render();
       return;
     }
@@ -800,7 +818,7 @@
   function saveShift(form) {
     const data = new FormData(form);
     const title = String(data.get("title") || "").trim();
-    const amount = Number(String(data.get("amount") || "").replace(",", "."));
+    const amount = parseCurrencyInput(data.get("amount"));
     const startsAt = parseDateTimeInput(data.get("startsAt"));
     const endsAt = parseDateTimeInput(data.get("endsAt"));
 
@@ -880,15 +898,24 @@
     }
 
     const sourceDate = parseDateInput(sourceDay);
+    const sourceMonth = sourceDate.getMonth();
+    const sourceYear = sourceDate.getFullYear();
     const today = new Date();
     const copied = [];
 
     for (const targetWeekday of selectedWeekdays) {
-      for (let week = 1; week <= 12; week++) {
+      for (let week = 1; week <= 8; week++) {
         const daysToAdd = (targetWeekday - sourceDate.getDay() + 7) % 7 + week * 7;
         const targetDate = new Date(sourceDate);
         targetDate.setDate(sourceDate.getDate() + daysToAdd);
         if (targetDate <= today) continue;
+        
+        // Only include dates in current month or next month
+        const targetMonth = targetDate.getMonth();
+        const targetYear = targetDate.getFullYear();
+        if (targetYear !== sourceYear || (targetMonth !== sourceMonth && targetMonth !== (sourceMonth + 1) % 12)) {
+          continue;
+        }
         
         const targetDay = dateKey(targetDate);
         // Check if shift already exists on this day
@@ -910,7 +937,7 @@
     }
 
     if (copied.length === 0) {
-      showToast("Nenhum novo plantao criado (ja existem ou datas passadas).");
+      showToast("Nenhum novo plantao criado (ja existem ou fora do periodo).");
       return;
     }
 
