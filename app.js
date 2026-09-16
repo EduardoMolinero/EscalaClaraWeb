@@ -76,15 +76,39 @@
     if (isDark) {
       root.style.setProperty("--page", "#1c1c1e");
       root.style.setProperty("--surface", "#2c2c2e");
+      root.style.setProperty("--text", "#f5f5f5");
+      root.style.setProperty("--body-bg", "#000000");
       root.style.setProperty("--line", "rgba(255, 255, 255, 0.1)");
       root.style.setProperty("--muted", "#8e8e93");
       root.style.setProperty("--secondary-fill", "rgba(255, 255, 255, 0.1)");
+      root.style.setProperty("--dialog-bg", "rgba(44, 44, 46, 0.98)");
+      root.style.setProperty("--header-bg", "rgba(28, 28, 30, 0.95)");
+      root.style.setProperty("--sheet-header-bg", "rgba(44, 44, 46, 0.91)");
+      root.style.setProperty("--tab-bg", "rgba(28, 28, 30, 0.92)");
+      root.style.setProperty("--day-cell-bg", "rgba(255, 255, 255, 0.05)");
+      root.style.setProperty("--day-cell-has-bg", "rgba(255, 255, 255, 0.08)");
+      root.style.setProperty("--empty-strong", "#e5e5e5");
+      root.style.setProperty("--form-placeholder", "#666666");
+      root.style.setProperty("--empty-text", "#8e8e93");
+      root.style.setProperty("--shadow", "0 16px 48px rgba(0, 0, 0, 0.4)");
     } else {
       root.style.setProperty("--page", "#f2f2f7");
       root.style.setProperty("--surface", "#ffffff");
+      root.style.setProperty("--text", "#151518");
+      root.style.setProperty("--body-bg", "#d9d9df");
       root.style.setProperty("--line", "rgba(60, 60, 67, 0.15)");
       root.style.setProperty("--muted", "#6d6d72");
       root.style.setProperty("--secondary-fill", "rgba(120, 120, 128, 0.12)");
+      root.style.setProperty("--dialog-bg", "rgba(248, 248, 252, 0.98)");
+      root.style.setProperty("--header-bg", "rgba(242, 242, 247, 0.95)");
+      root.style.setProperty("--sheet-header-bg", "rgba(249, 249, 252, 0.91)");
+      root.style.setProperty("--tab-bg", "rgba(249, 249, 252, 0.92)");
+      root.style.setProperty("--day-cell-bg", "rgba(120, 120, 128, 0.05)");
+      root.style.setProperty("--day-cell-has-bg", "rgba(120, 120, 128, 0.08)");
+      root.style.setProperty("--empty-strong", "#343438");
+      root.style.setProperty("--form-placeholder", "#9e9ea4");
+      root.style.setProperty("--empty-text", "#6d6d72");
+      root.style.setProperty("--shadow", "0 16px 48px rgba(20, 30, 35, 0.16)");
     }
   }
 
@@ -109,7 +133,9 @@
       emptyChart: "<path d=\"M4 20V10M10 20V4M16 20v-7M22 20H2\"/>",
       more: "<path d=\"M5 12h.01M12 12h.01M19 12h.01\" stroke-width=\"3\"/>",
       information: "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 10v6M12 7h.01\"/>",
-      file: "<path d=\"M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z\"/><path d=\"M14 2v6h6\"/>"
+      file: "<path d=\"M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z\"/><path d=\"M14 2v6h6\"/>",
+      sun: "<circle cx=\"12\" cy=\"12\" r=\"5\"/><path d=\"M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42\"/>",
+      moon: "<path d=\"M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z\"/>"
     };
     return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || ""}</svg>`;
   }
@@ -176,25 +202,6 @@
     return date;
   }
 
-  function parseDateTimeFromParts(dateStr, timeStr) {
-    const dateMatch = /^(\d{2})\/(\d{2})$/.exec(String(dateStr || ""));
-    const timeMatch = /^(\d{2}):(\d{2})$/.exec(String(timeStr || ""));
-    if (!dateMatch || !timeMatch) return null;
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = Number(dateMatch[2]) - 1;
-    const day = Number(dateMatch[1]);
-    const hours = Number(timeMatch[1]);
-    const minutes = Number(timeMatch[2]);
-    const date = new Date(year, month, day, hours, minutes);
-    if (Number.isNaN(date.getTime())) return null;
-    // If the date is in the past, assume next year
-    if (date < today) {
-      date.setFullYear(year + 1);
-    }
-    return date;
-  }
-
   function dateTimeLocalFromISO(value) {
     const date = validDate(value);
     if (!date) return "";
@@ -233,14 +240,6 @@
 
   function formatDayTitle(date) {
     return dayTitleFormatter.format(date);
-  }
-
-  function formatDayMonthInput(value) {
-    const date = validDate(value);
-    if (!date) return "";
-    const day = String(date.getDate()).padStart(2, "0");
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    return `${day}/${month}`;
   }
 
   function formatDate(date) {
@@ -579,7 +578,6 @@
     if (state.modal.type === "shift-form") {
       elements.modalRoot.innerHTML = renderShiftForm(state.modal);
       setupAmountInput();
-      setupDateInputs();
       return;
     }
     if (state.modal.type === "copy") {
@@ -662,31 +660,19 @@
     });
   }
 
-  function setupDateInputs() {
-    const dateInputs = document.querySelectorAll('input[name="startsAtDate"], input[name="endsAtDate"]');
-    dateInputs.forEach(input => {
-      input.addEventListener("input", (e) => {
-        let value = input.value.replace(/\D/g, "");
-        if (value.length >= 2) {
-          value = value.slice(0, 2) + "/" + value.slice(2, 4);
-        }
-        input.value = value.slice(0, 5);
-      });
-    });
-  }
-
   function renderShiftForm(modal) {
     const editing = modal.id ? state.shifts.find((shift) => shift.id === modal.id) : null;
     const day = editing ? dateFromISO(editing.day) : (modal.day || dateKey(new Date()));
     const defaults = editing || {
-      title: "Plantao",
-      startsAt: isoForDayAndTime(day, "07:00"),
-      endsAt: isoForDayAndTime(day, "19:00"),
+      title: modal.prefill?.title || "Plantao",
+      startsAt: modal.prefill?.startsAt || isoForDayAndTime(day, "07:00"),
+      endsAt: modal.prefill?.endsAt || isoForDayAndTime(day, "19:00"),
       amount: 0,
       isPaid: false,
       notes: "",
       ...DEFAULT_COLOR
     };
+    const fromSavedList = !!modal.prefill;
     const formTitle = editing ? "Editar plantao" : "Novo plantao";
     return `<div class="modal-backdrop" role="presentation">
       <section class="sheet" role="dialog" aria-modal="true" aria-label="${formTitle}">
@@ -695,7 +681,7 @@
           <h2>${formTitle}</h2>
           <span class="header-right"><button class="text-button" type="submit" form="shift-form">Salvar</button></span>
         </header>
-        <form id="shift-form" data-id="${editing ? editing.id : ""}">
+        <form id="shift-form" data-id="${editing ? editing.id : ""}" ${fromSavedList ? 'data-from-saved-list="true"' : ""}>
           <div class="sheet-content">
             <section class="form-section">
               <h3 class="section-title">Plantao</h3>
@@ -703,24 +689,12 @@
                 <div class="form-row" style="position: relative;">
                   <label for="shift-title">Descricao</label>
                   <div style="display: flex; gap: 8px; width: 100%;">
-                    <input id="shift-title" name="title" value="${escapeHTML(defaults.title)}" autocomplete="off" required style="flex: 1;" placeholder="Digite ou selecione um plantão salvo">
-                    <button type="button" class="icon-button" data-action="open-saved-shifts" aria-label="Selecionar plantão salvo" style="flex: 0 0 40px;">${icon("file")}</button>
+                    <input id="shift-title" name="title" value="${escapeHTML(defaults.title)}" autocomplete="off" required style="flex: 1;" placeholder="Digite ou selecione um plantao salvo">
+                    <button type="button" class="icon-button" data-action="open-saved-shifts" aria-label="Selecionar plantao salvo" style="flex: 0 0 40px;">${icon("file")}</button>
                   </div>
                 </div>
-                <div class="form-row">
-                  <label for="shift-start">Inicio</label>
-                  <div style="display: flex; gap: 8px; width: 100%;">
-                    <input id="shift-start-date" name="startsAtDate" type="text" inputmode="numeric" placeholder="DD/MM" value="${formatDayMonthInput(defaults.startsAt)}" required style="flex: 1;" maxlength="5">
-                    <input id="shift-start-time" name="startsAtTime" type="time" value="${timeFromISO(defaults.startsAt)}" required style="width: 90px;">
-                  </div>
-                </div>
-                <div class="form-row">
-                  <label for="shift-end">Fim</label>
-                  <div style="display: flex; gap: 8px; width: 100%;">
-                    <input id="shift-end-date" name="endsAtDate" type="text" inputmode="numeric" placeholder="DD/MM" value="${formatDayMonthInput(defaults.endsAt)}" required style="flex: 1;" maxlength="5">
-                    <input id="shift-end-time" name="endsAtTime" type="time" value="${timeFromISO(defaults.endsAt)}" required style="width: 90px;">
-                  </div>
-                </div>
+                <div class="form-row"><label for="shift-start">Inicio</label><input id="shift-start" name="startsAt" type="datetime-local" value="${dateTimeLocalFromISO(defaults.startsAt)}" required></div>
+                <div class="form-row"><label for="shift-end">Fim</label><input id="shift-end" name="endsAt" type="datetime-local" value="${dateTimeLocalFromISO(defaults.endsAt)}" required></div>
               </div>
             </section>
             <section class="form-section">
@@ -749,59 +723,46 @@
   function renderCopyDialog(modal) {
     const count = shiftsForDay(modal.sourceDay).length;
     const sourceDate = parseDateInput(modal.sourceDay);
-    const year = sourceDate.getFullYear();
-    const month = sourceDate.getMonth();
+    const calMonth = modal.copyMonth ?? sourceDate.getMonth();
+    const calYear = modal.copyYear ?? sourceDate.getFullYear();
     
-    // Generate calendar for current month and next month
-    const calendars = [0, 1].map(offset => {
-      const calMonth = (month + offset) % 12;
-      const calYear = year + (month + offset >= 12 ? 1 : 0);
-      const firstDay = new Date(calYear, calMonth, 1);
-      const lastDay = new Date(calYear, calMonth + 1, 0);
-      const leadingDays = firstDay.getDay();
-      const daysInMonth = lastDay.getDate();
-      const cells = [
-        ...Array(leadingDays).fill(null),
-        ...Array.from({ length: daysInMonth }, (_, i) => new Date(calYear, calMonth, i + 1))
-      ];
-      return cells.map(date => {
-        if (!date) return '<div class="copy-cal-empty"></div>';
-        const dayKey = dateKey(date);
-        const isSelected = modal.targetDays?.includes(dayKey) || false;
-        const hasShifts = shiftsForDay(dayKey).length > 0;
-        const isSourceDay = dayKey === modal.sourceDay;
-        const classes = ["copy-cal-day", isSelected ? "selected" : "", hasShifts ? "has-shifts" : "", isSourceDay ? "source-day" : ""].filter(Boolean).join(" ");
-        return `<button type="button" class="${classes}" data-day="${dayKey}" data-action="toggle-copy-day" aria-label="${formatDate(date)}${isSelected ? ', selecionado' : ''}${hasShifts ? ', tem plantões' : ''}${isSourceDay ? ', dia original' : ''}">
-          <span>${date.getDate()}</span>
-        </button>`;
-      }).join("");
-    });
+    const firstDay = new Date(calYear, calMonth, 1);
+    const lastDay = new Date(calYear, calMonth + 1, 0);
+    const leadingDays = firstDay.getDay();
+    const daysInMonth = lastDay.getDate();
+    const cells = [
+      ...Array(leadingDays).fill(null),
+      ...Array.from({ length: daysInMonth }, (_, i) => new Date(calYear, calMonth, i + 1))
+    ];
     
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-    const monthLabels = [0, 1].map(offset => {
-      const calMonth = (month + offset) % 12;
-      const calYear = year + (month + offset >= 12 ? 1 : 0);
-      return `${monthNames[calMonth]} ${calYear}`;
-    });
+    
+    const dayButtons = cells.map(date => {
+      if (!date) return '<div class="copy-cal-empty"></div>';
+      const dk = dateKey(date);
+      const isSelected = modal.targetDays?.includes(dk) || false;
+      const isSourceDay = dk === modal.sourceDay;
+      const classes = ["copy-cal-day", isSelected ? "selected" : "", isSourceDay ? "source-day" : ""].filter(Boolean).join(" ");
+      return `<button type="button" class="${classes}" data-day="${dk}" data-action="toggle-copy-day" aria-label="${date.getDate()} de ${monthNames[calMonth]}${isSelected ? ", selecionado" : ""}${isSourceDay ? ", dia original" : ""}">
+        <span>${date.getDate()}</span>
+      </button>`;
+    }).join("");
     
     const selectedCount = modal.targetDays?.length || 0;
     
     return `<div class="modal-backdrop dialog-backdrop" role="presentation">
-      <form class="dialog copy-dialog" id="copy-form" data-source-day="${modal.sourceDay}" role="dialog" aria-modal="true" aria-label="Copiar plantões">
+      <form class="dialog copy-dialog" id="copy-form" data-source-day="${modal.sourceDay}" role="dialog" aria-modal="true" aria-label="Copiar plantoes">
         <div class="dialog-copy">
-          <h2>Copiar plantões</h2>
-          <p>Serão criados ${count} plantão(ões) para cada dia selecionado. Os novos registros começam como pendentes.</p>
+          <h2>Copiar plantoes</h2>
+          <p>Serao criados ${count} plantao(oes) para cada dia selecionado. Toque nos dias para selecionar.</p>
           <div class="copy-calendar-wrapper">
-            <div class="copy-calendar">
-              <h3>${monthLabels[0]}</h3>
-              <div class="copy-weekdays">${["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map(d => `<span>${d}</span>`).join("")}</div>
-              <div class="copy-calendar-grid">${calendars[0]}</div>
+            <div class="copy-cal-nav">
+              <button type="button" class="month-button" data-action="copy-prev-month" aria-label="Mes anterior">${icon("chevronLeft")}</button>
+              <h3>${monthNames[calMonth]} ${calYear}</h3>
+              <button type="button" class="month-button" data-action="copy-next-month" aria-label="Proximo mes">${icon("chevronRight")}</button>
             </div>
-            <div class="copy-calendar">
-              <h3>${monthLabels[1]}</h3>
-              <div class="copy-weekdays">${["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map(d => `<span>${d}</span>`).join("")}</div>
-              <div class="copy-calendar-grid">${calendars[1]}</div>
-            </div>
+            <div class="copy-weekdays">${["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"].map(d => `<span>${d}</span>`).join("")}</div>
+            <div class="copy-calendar-grid">${dayButtons}</div>
           </div>
           <div class="copy-selected-info" style="margin-top: 12px; padding: 10px; background: var(--secondary-fill); border-radius: 8px; text-align: center;">
             <span>${selectedCount} dia(s) selecionado(s)</span>
@@ -1053,7 +1014,25 @@
       const sourceDay = target.dataset.day || state.selectedDay;
       const source = parseDateInput(sourceDay);
       if (!source || !shiftsForDay(sourceDay).length) return;
-      state.modal = { type: "copy", sourceDay, targetDays: [] };
+      state.modal = { type: "copy", sourceDay, targetDays: [], copyMonth: source.getMonth(), copyYear: source.getFullYear() };
+      renderModal();
+      return;
+    }
+    if (action === "copy-prev-month") {
+      let m = (state.modal.copyMonth ?? 0) - 1;
+      let y = state.modal.copyYear ?? new Date().getFullYear();
+      if (m < 0) { m = 11; y--; }
+      state.modal.copyMonth = m;
+      state.modal.copyYear = y;
+      renderModal();
+      return;
+    }
+    if (action === "copy-next-month") {
+      let m = (state.modal.copyMonth ?? 0) + 1;
+      let y = state.modal.copyYear ?? new Date().getFullYear();
+      if (m > 11) { m = 0; y++; }
+      state.modal.copyMonth = m;
+      state.modal.copyYear = y;
       renderModal();
       return;
     }
@@ -1072,7 +1051,9 @@
       return;
     }
     if (action === "open-saved-shifts") {
-      state.modal = { type: "saved-shifts" };
+      const titleInput = document.getElementById("shift-title");
+      const day = state.modal?.day || state.selectedDay;
+      state.modal = { type: "saved-shifts", parentShiftForm: { day, id: state.modal?.id } };
       renderModal();
       return;
     }
@@ -1080,22 +1061,16 @@
       const index = Number(target.dataset.index);
       const saved = state.savedShifts[index];
       if (!saved) return;
-      // Fill the shift form with the saved shift data
-      const titleInput = document.getElementById("shift-title");
-      const startDateInput = document.getElementById("shift-start-date");
-      const startTimeInput = document.getElementById("shift-start-time");
-      const endDateInput = document.getElementById("shift-end-date");
-      const endTimeInput = document.getElementById("shift-end-time");
-      
-      if (titleInput) titleInput.value = saved.title;
-      if (startTimeInput) startTimeInput.value = saved.startTime;
-      if (endTimeInput) endTimeInput.value = saved.endTime;
-      
-      // Mark that this shift was selected from saved list (don't add to saved list again)
-      const form = document.getElementById("shift-form");
-      if (form) form.dataset.fromSavedList = "true";
-      
-      state.modal = null;
+      const shiftModal = state.modal.parentShiftForm;
+      const day = shiftModal?.day || state.selectedDay;
+      const startsAt = isoForDayAndTime(day, saved.startTime);
+      const endsAt = isoForDayAndTime(day, saved.endTime);
+      state.modal = {
+        type: "shift-form",
+        day,
+        id: shiftModal?.id || null,
+        prefill: { title: saved.title, startsAt, endsAt }
+      };
       renderModal();
       return;
     }
@@ -1121,7 +1096,7 @@
       const sourceDay = target.dataset.day || state.selectedDay;
       const source = parseDateInput(sourceDay);
       if (!source || !shiftsForDay(sourceDay).length) return;
-      state.modal = { type: "repeat", sourceDay, weekdays: [] };
+      state.modal = { type: "copy", sourceDay, targetDays: [] };
       renderModal();
       return;
     }
@@ -1181,8 +1156,8 @@
     const data = new FormData(form);
     const title = String(data.get("title") || "").trim();
     const amount = parseCurrencyMasked(data.get("amount"));
-    const startsAt = parseDateTimeFromParts(data.get("startsAtDate"), data.get("startsAtTime"));
-    const endsAt = parseDateTimeFromParts(data.get("endsAtDate"), data.get("endsAtTime"));
+    const startsAt = parseDateTimeInput(data.get("startsAt"));
+    const endsAt = parseDateTimeInput(data.get("endsAt"));
 
     if (!title) {
       showToast("Informe uma descricao para o plantao.");

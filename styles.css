@@ -4,6 +4,7 @@
   --accent-dark: #075a57;
   --page: #f2f2f7;
   --surface: #ffffff;
+  --text: #151518;
   --line: rgba(60, 60, 67, 0.15);
   --muted: #6d6d72;
   --secondary-fill: rgba(120, 120, 128, 0.12);
@@ -11,6 +12,16 @@
   --warning: #c86d00;
   --success: #278443;
   --shadow: 0 16px 48px rgba(20, 30, 35, 0.16);
+  --dialog-bg: rgba(248, 248, 252, 0.98);
+  --header-bg: rgba(242, 242, 247, 0.95);
+  --sheet-header-bg: rgba(249, 249, 252, 0.91);
+  --tab-bg: rgba(249, 249, 252, 0.92);
+  --body-bg: #d9d9df;
+  --day-cell-bg: rgba(120, 120, 128, 0.05);
+  --day-cell-has-bg: rgba(120, 120, 128, 0.08);
+  --empty-strong: #343438;
+  --form-placeholder: #9e9ea4;
+  --empty-text: #6d6d72;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -23,8 +34,8 @@ html,
 body {
   min-height: 100%;
   margin: 0;
-  background: #d9d9df;
-  color: #151518;
+  background: var(--body-bg);
+  color: var(--text);
   overscroll-behavior: none;
   touch-action: pan-y;
 }
@@ -72,11 +83,12 @@ textarea:focus-visible {
   justify-content: space-between;
   min-height: 56px;
   padding: calc(12px + env(safe-area-inset-top)) 16px 8px;
-  background: rgba(242, 242, 247, 0.95);
+  background: var(--header-bg);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   z-index: 10;
   flex-shrink: 0;
+  color: var(--text);
 }
 
 .screen-header h1 {
@@ -211,16 +223,16 @@ textarea:focus-visible {
   gap: 3px;
   padding: 5px 4px 4px;
   overflow: hidden;
-  color: inherit;
+  color: var(--text);
   text-align: left;
-  background: rgba(120, 120, 128, 0.05);
+  background: var(--day-cell-bg);
   border-radius: 10px;
   border: 1px solid transparent;
   transition: background 0.15s, border-color 0.15s;
 }
 
 .day-cell.has-shifts {
-  background: rgba(120, 120, 128, 0.08);
+  background: var(--day-cell-has-bg);
 }
 
 .day-cell.today {
@@ -310,7 +322,7 @@ textarea:focus-visible {
 
 .empty-shifts span {
   font-size: 14px;
-  color: #6d6d72;
+  color: var(--empty-text);
 }
 
 .shift-row {
@@ -392,7 +404,7 @@ textarea:focus-visible {
   align-items: center;
   gap: 4px;
   padding: 10px 6px;
-  background: var(--page);
+  background: var(--day-cell-bg);
   border: 1px solid var(--line);
   border-radius: 10px;
   cursor: pointer;
@@ -458,7 +470,7 @@ textarea:focus-visible {
   justify-content: center;
   min-height: calc(64px + env(safe-area-inset-bottom));
   padding: 7px max(8px, calc((100vw - 720px) / 2 + 8px)) calc(6px + env(safe-area-inset-bottom));
-  background: rgba(249, 249, 252, 0.92);
+  background: var(--tab-bg);
   border-top: 1px solid var(--line);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -470,7 +482,7 @@ textarea:focus-visible {
   justify-items: center;
   gap: 2px;
   padding: 2px 0;
-  color: #7a7a81;
+  color: var(--muted);
   background: transparent;
   font-size: 10px;
   font-weight: 600;
@@ -663,7 +675,7 @@ textarea:focus-visible {
 }
 
 .empty-state strong {
-  color: #343438;
+  color: var(--empty-strong);
   font-size: 17px;
 }
 
@@ -705,10 +717,11 @@ textarea:focus-visible {
   align-items: center;
   min-height: 56px;
   padding: 0 14px;
-  background: rgba(249, 249, 252, 0.91);
+  background: var(--sheet-header-bg);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+  color: var(--text);
 }
 
 .sheet-header h2 {
@@ -930,7 +943,7 @@ textarea:focus-visible {
 
 .form-row input::placeholder,
 .form-row textarea::placeholder {
-  color: #9e9ea4;
+  color: var(--form-placeholder);
 }
 
 .form-row input[type="color"] {
@@ -1001,11 +1014,12 @@ textarea:focus-visible {
 .dialog {
   width: min(100%, 330px);
   overflow: hidden;
-  background: rgba(248, 248, 252, 0.98);
+  background: var(--dialog-bg);
   border-radius: 14px;
   box-shadow: var(--shadow);
   text-align: center;
   animation: appear 0.16s ease-out;
+  color: var(--text);
 }
 
 .dialog-copy {
@@ -1019,7 +1033,7 @@ textarea:focus-visible {
 
 .dialog p {
   margin: 8px 0 0;
-  color: #444449;
+  color: var(--muted);
   font-size: 13px;
   line-height: 1.35;
 }
@@ -1093,7 +1107,7 @@ textarea:focus-visible {
 }
 
 .copy-dialog {
-  width: min(100%, 600px);
+  width: min(100%, 380px);
   max-height: 90dvh;
   overflow-y: auto;
 }
@@ -1101,15 +1115,22 @@ textarea:focus-visible {
 .copy-calendar-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
   margin-top: 12px;
 }
 
-.copy-calendar h3 {
-  margin: 0 0 8px;
+.copy-cal-nav {
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.copy-cal-nav h3 {
+  margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: var(--muted);
+  color: var(--text);
   text-align: center;
 }
 
@@ -1143,7 +1164,7 @@ textarea:focus-visible {
   align-items: center;
   justify-content: center;
   min-height: 36px;
-  background: var(--page);
+  background: var(--day-cell-bg);
   border: 1px solid var(--line);
   border-radius: 8px;
   font-size: 13px;
