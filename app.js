@@ -881,8 +881,6 @@
         </div>
       </section>
     </div>`;
-      </section>
-    </div>`;
   }
 
   function renderConfirmDeleteDialog(modal) {
