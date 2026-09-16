@@ -187,6 +187,29 @@
     return toSwiftISO(date);
   }
 
+  function isTimeBefore(time1, time2) {
+    const m1 = /^(\d{2}):(\d{2})$/.exec(String(time1));
+    const m2 = /^(\d{2}):(\d{2})$/.exec(String(time2));
+    if (!m1 || !m2) return false;
+    const mins1 = Number(m1[1]) * 60 + Number(m1[2]);
+    const mins2 = Number(m2[1]) * 60 + Number(m2[2]);
+    return mins1 < mins2;
+  }
+
+  function nextDayKey(day) {
+    const d = parseDateInput(day);
+    if (!d) return day;
+    d.setDate(d.getDate() + 1);
+    return dateKey(d);
+  }
+
+  function isoForDayAndTimeOvernight(day, startTime, endTime) {
+    if (isTimeBefore(endTime, startTime)) {
+      return isoForDayAndTime(nextDayKey(day), endTime);
+    }
+    return isoForDayAndTime(day, endTime);
+  }
+
   function parseDateTimeInput(value) {
     const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(value));
     if (!match) return null;
@@ -853,6 +876,11 @@
           <ul class="saved-shifts-list" style="margin: 0; padding: 0; list-style: none; background: var(--surface); border-radius: 12px; overflow: hidden;">${shiftRows}</ul>
           <button type="button" class="text-button" data-action="new-saved-shift" style="margin-top: 12px; width: 100%; text-align: left;">${icon("plus")} Novo plantão salvo</button>
         </div>
+        <div class="dialog-actions">
+          <button type="button" data-action="close-modal">Cancelar</button>
+        </div>
+      </section>
+    </div>`;
       </section>
     </div>`;
   }
@@ -1064,7 +1092,7 @@
       const shiftModal = state.modal.parentShiftForm;
       const day = shiftModal?.day || state.selectedDay;
       const startsAt = isoForDayAndTime(day, saved.startTime);
-      const endsAt = isoForDayAndTime(day, saved.endTime);
+      const endsAt = isoForDayAndTimeOvernight(day, saved.startTime, saved.endTime);
       state.modal = {
         type: "shift-form",
         day,
@@ -1248,12 +1276,14 @@
     for (const targetDay of targetDays) {
       if (!isoForDay(targetDay)) continue;
       for (const shift of sourceShifts) {
+        const startTime = timeFromISO(shift.startsAt);
+        const endTime = timeFromISO(shift.endsAt);
         copied.push({
           ...shift,
           id: uuid(),
           day: isoForDay(targetDay),
-          startsAt: isoForDayAndTime(targetDay, timeFromISO(shift.startsAt)),
-          endsAt: isoForDayAndTime(targetDay, timeFromISO(shift.endsAt)),
+          startsAt: isoForDayAndTime(targetDay, startTime),
+          endsAt: isoForDayAndTimeOvernight(targetDay, startTime, endTime),
           isPaid: false
         });
       }
@@ -1262,7 +1292,7 @@
     persistShifts();
     state.modal = null;
     render();
-    showToast(`${copied.length} plantões copiados com sucesso.`);
+    showToast(`${copied.length} plantoes copiados com sucesso.`);
   }
 
   function repeatShifts(form) {
@@ -1306,12 +1336,14 @@
         if (exists) continue;
 
         for (const shift of sourceShifts) {
+          const startTime = timeFromISO(shift.startsAt);
+          const endTime = timeFromISO(shift.endsAt);
           copied.push({
             ...shift,
             id: uuid(),
             day: isoForDay(targetDay),
-            startsAt: isoForDayAndTime(targetDay, timeFromISO(shift.startsAt)),
-            endsAt: isoForDayAndTime(targetDay, timeFromISO(shift.endsAt)),
+            startsAt: isoForDayAndTime(targetDay, startTime),
+            endsAt: isoForDayAndTimeOvernight(targetDay, startTime, endTime),
             isPaid: false
           });
         }
