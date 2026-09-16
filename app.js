@@ -2,6 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "escala-clara.shifts.v1";
+  const SHIFTS_LIST_KEY = "escala-clara.saved-shifts.v1";
   const ARCHIVE_VERSION = 1;
   const DEFAULT_COLOR = { red: 0.10, green: 0.55, blue: 0.52 };
   const currencyFormatter = new Intl.NumberFormat("pt-BR", {
@@ -41,14 +42,51 @@
 
   const state = {
     shifts: loadShifts(),
+    savedShifts: loadSavedShifts(),
     tab: "calendar",
     displayedMonth: startOfMonth(new Date()),
     selectedDay: dateKey(new Date()),
     modal: null,
-    pendingArchive: null
+    pendingArchive: null,
+    isDarkMode: loadTheme()
   };
 
   let toastTimer;
+
+  function loadTheme() {
+    try {
+      const saved = localStorage.getItem("escala-clara.theme");
+      if (saved === "dark") return true;
+      if (saved === "light") return false;
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    } catch {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+  }
+
+  function saveTheme(isDark) {
+    try {
+      localStorage.setItem("escala-clara.theme", isDark ? "dark" : "light");
+    } catch {}
+  }
+
+  function applyTheme(isDark) {
+    document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+    const root = document.documentElement;
+    if (isDark) {
+      root.style.setProperty("--page", "#1c1c1e");
+      root.style.setProperty("--surface", "#2c2c2e");
+      root.style.setProperty("--line", "rgba(255, 255, 255, 0.1)");
+      root.style.setProperty("--muted", "#8e8e93");
+      root.style.setProperty("--secondary-fill", "rgba(255, 255, 255, 0.1)");
+    } else {
+      root.style.setProperty("--page", "#f2f2f7");
+      root.style.setProperty("--surface", "#ffffff");
+      root.style.setProperty("--line", "rgba(60, 60, 67, 0.15)");
+      root.style.setProperty("--muted", "#6d6d72");
+      root.style.setProperty("--secondary-fill", "rgba(120, 120, 128, 0.12)");
+    }
+  }
 
   function icon(name) {
     const paths = {
@@ -138,6 +176,25 @@
     return date;
   }
 
+  function parseDateTimeFromParts(dateStr, timeStr) {
+    const dateMatch = /^(\d{2})\/(\d{2})$/.exec(String(dateStr || ""));
+    const timeMatch = /^(\d{2}):(\d{2})$/.exec(String(timeStr || ""));
+    if (!dateMatch || !timeMatch) return null;
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = Number(dateMatch[2]) - 1;
+    const day = Number(dateMatch[1]);
+    const hours = Number(timeMatch[1]);
+    const minutes = Number(timeMatch[2]);
+    const date = new Date(year, month, day, hours, minutes);
+    if (Number.isNaN(date.getTime())) return null;
+    // If the date is in the past, assume next year
+    if (date < today) {
+      date.setFullYear(year + 1);
+    }
+    return date;
+  }
+
   function dateTimeLocalFromISO(value) {
     const date = validDate(value);
     if (!date) return "";
@@ -176,6 +233,14 @@
 
   function formatDayTitle(date) {
     return dayTitleFormatter.format(date);
+  }
+
+  function formatDayMonthInput(value) {
+    const date = validDate(value);
+    if (!date) return "";
+    const day = String(date.getDate()).padStart(2, "0");
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    return `${day}/${month}`;
   }
 
   function formatDate(date) {
@@ -278,6 +343,26 @@
     }
   }
 
+  function loadSavedShifts() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SHIFTS_LIST_KEY) || "[]");
+      if (!Array.isArray(saved)) return [];
+      return saved.filter(s => s && typeof s.title === "string" && typeof s.startTime === "string" && typeof s.endTime === "string");
+    } catch {
+      return [];
+    }
+  }
+
+  function saveSavedShifts() {
+    try {
+      localStorage.setItem(SHIFTS_LIST_KEY, JSON.stringify(state.savedShifts));
+      return true;
+    } catch {
+      showToast("Nao foi possivel gravar a lista de plantões salvos.");
+      return false;
+    }
+  }
+
   function persistShifts() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.shifts));
@@ -365,7 +450,7 @@
     `).join("") : `<li class="empty-shifts">${icon("emptyCalendar")}<span>Nenhum plantao neste dia</span></li>`;
 
     return `<section class="screen">
-      ${renderScreenHeader("Minha escala", `<button class="icon-button" data-action="new-shift" data-day="${state.selectedDay}" aria-label="Novo plantao">${icon("plus")}</button>`)}
+      ${renderScreenHeader("Minha escala", `<button class="icon-button" data-action="toggle-theme" aria-label="${state.isDarkMode ? "Tema claro" : "Tema escuro"}">${icon(state.isDarkMode ? "sun" : "moon")}</button><button class="icon-button" data-action="new-shift" data-day="${state.selectedDay}" aria-label="Novo plantao">${icon("plus")}</button>`)}
       <div class="content">
         <div class="calendar-wrapper">
           <section class="calendar-card" aria-label="Calendario mensal">
@@ -482,11 +567,19 @@
   function renderModal() {
     if (!state.modal) {
       elements.modalRoot.innerHTML = "";
+      document.body.style.overflow = "";
+      document.body.style.position = "";
+      document.body.style.width = "";
       return;
     }
+    document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.width = "100%";
 
     if (state.modal.type === "shift-form") {
       elements.modalRoot.innerHTML = renderShiftForm(state.modal);
+      setupAmountInput();
+      setupDateInputs();
       return;
     }
     if (state.modal.type === "copy") {
@@ -504,11 +597,14 @@
     if (state.modal.type === "import") {
       elements.modalRoot.innerHTML = renderImportDialog();
     }
+    if (state.modal.type === "saved-shifts") {
+      elements.modalRoot.innerHTML = renderSavedShiftsDialog(state.modal);
+    }
   }
 
   function formatCurrencyInput(value) {
     const num = Number(value);
-    if (isNaN(num)) return "";
+    if (isNaN(num) || num === 0) return "";
     return num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
@@ -516,6 +612,67 @@
     const clean = String(value).replace(/[^\d,]/g, "").replace(",", ".");
     const num = Number(clean);
     return isNaN(num) ? 0 : num;
+  }
+
+  function formatCurrencyAsYouType(value) {
+    const digits = String(value).replace(/\D/g, "");
+    if (!digits) return "";
+    const cents = digits.padStart(3, "0");
+    const integerPart = cents.slice(0, -2);
+    const decimalPart = cents.slice(-2);
+    const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    return `R$ ${formattedInteger},${decimalPart}`;
+  }
+
+  function parseCurrencyMasked(value) {
+    const digits = String(value).replace(/\D/g, "");
+    if (!digits) return 0;
+    return Number(digits) / 100;
+  }
+
+  function setupAmountInput() {
+    const input = document.getElementById("shift-amount");
+    if (!input) return;
+    
+    input.addEventListener("input", (e) => {
+      const cursorPos = input.selectionStart;
+      const oldValue = input.value;
+      const rawValue = input.value.replace(/\D/g, "");
+      const formattedValue = formatCurrencyAsYouType(rawValue);
+      input.value = formattedValue;
+      input.dataset.rawAmount = rawValue ? (Number(rawValue) / 100).toFixed(2) : "0";
+      
+      // Adjust cursor position
+      const newLength = formattedValue.length;
+      const oldLength = oldValue.length;
+      const diff = newLength - oldLength;
+      input.setSelectionRange(cursorPos + diff, cursorPos + diff);
+    });
+
+    input.addEventListener("focus", () => {
+      if (!input.value) {
+        input.value = "R$ 0,00";
+      }
+    });
+
+    input.addEventListener("blur", () => {
+      if (input.value === "R$ 0,00") {
+        input.value = "";
+      }
+    });
+  }
+
+  function setupDateInputs() {
+    const dateInputs = document.querySelectorAll('input[name="startsAtDate"], input[name="endsAtDate"]');
+    dateInputs.forEach(input => {
+      input.addEventListener("input", (e) => {
+        let value = input.value.replace(/\D/g, "");
+        if (value.length >= 2) {
+          value = value.slice(0, 2) + "/" + value.slice(2, 4);
+        }
+        input.value = value.slice(0, 5);
+      });
+    });
   }
 
   function renderShiftForm(modal) {
@@ -543,9 +700,27 @@
             <section class="form-section">
               <h3 class="section-title">Plantao</h3>
               <div class="form-list">
-                <div class="form-row"><label for="shift-title">Descricao</label><input id="shift-title" name="title" value="${escapeHTML(defaults.title)}" autocomplete="off" required></div>
-                <div class="form-row"><label for="shift-start">Inicio</label><input id="shift-start" name="startsAt" type="datetime-local" value="${dateTimeLocalFromISO(defaults.startsAt)}" required></div>
-                <div class="form-row"><label for="shift-end">Fim</label><input id="shift-end" name="endsAt" type="datetime-local" value="${dateTimeLocalFromISO(defaults.endsAt)}" required></div>
+                <div class="form-row" style="position: relative;">
+                  <label for="shift-title">Descricao</label>
+                  <div style="display: flex; gap: 8px; width: 100%;">
+                    <input id="shift-title" name="title" value="${escapeHTML(defaults.title)}" autocomplete="off" required style="flex: 1;" placeholder="Digite ou selecione um plantão salvo">
+                    <button type="button" class="icon-button" data-action="open-saved-shifts" aria-label="Selecionar plantão salvo" style="flex: 0 0 40px;">${icon("file")}</button>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <label for="shift-start">Inicio</label>
+                  <div style="display: flex; gap: 8px; width: 100%;">
+                    <input id="shift-start-date" name="startsAtDate" type="text" inputmode="numeric" placeholder="DD/MM" value="${formatDayMonthInput(defaults.startsAt)}" required style="flex: 1;" maxlength="5">
+                    <input id="shift-start-time" name="startsAtTime" type="time" value="${timeFromISO(defaults.startsAt)}" required style="width: 90px;">
+                  </div>
+                </div>
+                <div class="form-row">
+                  <label for="shift-end">Fim</label>
+                  <div style="display: flex; gap: 8px; width: 100%;">
+                    <input id="shift-end-date" name="endsAtDate" type="text" inputmode="numeric" placeholder="DD/MM" value="${formatDayMonthInput(defaults.endsAt)}" required style="flex: 1;" maxlength="5">
+                    <input id="shift-end-time" name="endsAtTime" type="time" value="${timeFromISO(defaults.endsAt)}" required style="width: 90px;">
+                  </div>
+                </div>
               </div>
             </section>
             <section class="form-section">
@@ -553,7 +728,7 @@
               <div class="form-list">
                 <div class="form-row">
                   <label for="shift-amount">Valor</label>
-                  <input id="shift-amount" name="amount" type="text" inputmode="decimal" value="${formatCurrencyInput(defaults.amount)}" required placeholder="R$ 0,00">
+                  <input id="shift-amount" name="amount" type="text" inputmode="numeric" value="${formatCurrencyAsYouType(defaults.amount * 100)}" required placeholder="R$ 0,00" data-raw-amount="${defaults.amount}">
                 </div>
                 <div class="form-row"><span>Ja foi pago</span><label class="switch" aria-label="Ja foi pago"><input name="isPaid" type="checkbox" ${defaults.isPaid ? "checked" : ""}><span></span></label></div>
               </div>
@@ -573,15 +748,68 @@
 
   function renderCopyDialog(modal) {
     const count = shiftsForDay(modal.sourceDay).length;
+    const sourceDate = parseDateInput(modal.sourceDay);
+    const year = sourceDate.getFullYear();
+    const month = sourceDate.getMonth();
+    
+    // Generate calendar for current month and next month
+    const calendars = [0, 1].map(offset => {
+      const calMonth = (month + offset) % 12;
+      const calYear = year + (month + offset >= 12 ? 1 : 0);
+      const firstDay = new Date(calYear, calMonth, 1);
+      const lastDay = new Date(calYear, calMonth + 1, 0);
+      const leadingDays = firstDay.getDay();
+      const daysInMonth = lastDay.getDate();
+      const cells = [
+        ...Array(leadingDays).fill(null),
+        ...Array.from({ length: daysInMonth }, (_, i) => new Date(calYear, calMonth, i + 1))
+      ];
+      return cells.map(date => {
+        if (!date) return '<div class="copy-cal-empty"></div>';
+        const dayKey = dateKey(date);
+        const isSelected = modal.targetDays?.includes(dayKey) || false;
+        const hasShifts = shiftsForDay(dayKey).length > 0;
+        const isSourceDay = dayKey === modal.sourceDay;
+        const classes = ["copy-cal-day", isSelected ? "selected" : "", hasShifts ? "has-shifts" : "", isSourceDay ? "source-day" : ""].filter(Boolean).join(" ");
+        return `<button type="button" class="${classes}" data-day="${dayKey}" data-action="toggle-copy-day" aria-label="${formatDate(date)}${isSelected ? ', selecionado' : ''}${hasShifts ? ', tem plantões' : ''}${isSourceDay ? ', dia original' : ''}">
+          <span>${date.getDate()}</span>
+        </button>`;
+      }).join("");
+    });
+    
+    const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    const monthLabels = [0, 1].map(offset => {
+      const calMonth = (month + offset) % 12;
+      const calYear = year + (month + offset >= 12 ? 1 : 0);
+      return `${monthNames[calMonth]} ${calYear}`;
+    });
+    
+    const selectedCount = modal.targetDays?.length || 0;
+    
     return `<div class="modal-backdrop dialog-backdrop" role="presentation">
-      <form class="dialog" id="copy-form" data-source-day="${modal.sourceDay}" role="dialog" aria-modal="true" aria-label="Repetir escala">
+      <form class="dialog copy-dialog" id="copy-form" data-source-day="${modal.sourceDay}" role="dialog" aria-modal="true" aria-label="Copiar plantões">
         <div class="dialog-copy">
-          <h2>Repetir escala</h2>
-          <p>Serão criados ${count} plantões com os mesmos horarios, cores, valores e observacoes. Os novos registros começam como pendentes.</p>
-          <label class="copy-date-row"><span>Copiar para</span><input name="targetDay" type="date" value="${modal.targetDay}" required></label>
+          <h2>Copiar plantões</h2>
+          <p>Serão criados ${count} plantão(ões) para cada dia selecionado. Os novos registros começam como pendentes.</p>
+          <div class="copy-calendar-wrapper">
+            <div class="copy-calendar">
+              <h3>${monthLabels[0]}</h3>
+              <div class="copy-weekdays">${["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map(d => `<span>${d}</span>`).join("")}</div>
+              <div class="copy-calendar-grid">${calendars[0]}</div>
+            </div>
+            <div class="copy-calendar">
+              <h3>${monthLabels[1]}</h3>
+              <div class="copy-weekdays">${["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map(d => `<span>${d}</span>`).join("")}</div>
+              <div class="copy-calendar-grid">${calendars[1]}</div>
+            </div>
+          </div>
+          <div class="copy-selected-info" style="margin-top: 12px; padding: 10px; background: var(--secondary-fill); border-radius: 8px; text-align: center;">
+            <span>${selectedCount} dia(s) selecionado(s)</span>
+            <input type="hidden" name="targetDays" value="${modal.targetDays?.join(",") || ""}">
+          </div>
         </div>
         <div class="dialog-actions">
-          <button type="submit">Copiar ${count}</button>
+          <button type="submit" ${selectedCount === 0 ? "disabled" : ""}>Copiar para ${selectedCount} dia(s)</button>
           <button type="button" data-action="close-modal">Cancelar</button>
         </div>
       </form>
@@ -599,6 +827,70 @@
           <button data-action="apply-import" data-mode="merge">Mesclar com meus plantões</button>
           <button class="destructive" data-action="apply-import" data-mode="replace">Substituir todos os meus plantões</button>
           <button data-action="cancel-import">Cancelar</button>
+        </div>
+      </section>
+    </div>`;
+  }
+
+  function renderSavedShiftsDialog(modal) {
+    const shiftId = modal.shiftId;
+    const isEditing = modal.mode === "edit";
+    const savedShifts = state.savedShifts;
+    
+    const shiftRows = savedShifts.length ? savedShifts.map((saved, index) => `
+      <li class="saved-shift-row" data-index="${index}" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: var(--surface); border-bottom: 1px solid var(--line); gap: 10px;">
+        <div style="flex: 1; min-width: 0;">
+          <strong style="display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHTML(saved.title)}</strong>
+          <span style="display: block; margin-top: 2px; color: var(--muted); font-size: 12px;">${saved.startTime} - ${saved.endTime}</span>
+        </div>
+        <div style="display: flex; gap: 4px;">
+          <button type="button" class="row-action" data-action="select-saved-shift" data-index="${index}" aria-label="Selecionar ${escapeHTML(saved.title)}">${icon("check")}</button>
+          <button type="button" class="row-action" data-action="edit-saved-shift" data-index="${index}" aria-label="Editar ${escapeHTML(saved.title)}">${icon("palette")}</button>
+          <button type="button" class="row-action delete" data-action="delete-saved-shift" data-index="${index}" aria-label="Excluir ${escapeHTML(saved.title)}">${icon("trash")}</button>
+        </div>
+      </li>
+    `).join("") : `<li class="empty-shifts" style="padding: 24px; text-align: center; color: var(--muted);">${icon("emptyCalendar")}<span>Nenhum plantão salvo</span></li>`;
+    
+    if (isEditing) {
+      const saved = savedShifts[modal.editIndex];
+      return `<div class="modal-backdrop dialog-backdrop" role="presentation">
+        <form class="dialog" id="saved-shift-form" data-index="${modal.editIndex}" role="dialog" aria-modal="true" aria-label="Editar plantão salvo">
+          <div class="dialog-copy">
+            <h2>Editar plantão salvo</h2>
+          </div>
+          <div style="padding: 0 20px 16px;">
+            <div class="form-list" style="margin-bottom: 16px;">
+              <div class="form-row" style="flex-direction: column; align-items: stretch; gap: 8px; padding: 12px 0;">
+                <label for="saved-title">Descricao</label>
+                <input id="saved-title" name="title" value="${escapeHTML(saved?.title || "")}" required autocomplete="off">
+              </div>
+              <div class="form-row" style="flex-direction: column; align-items: stretch; gap: 8px; padding: 12px 0;">
+                <label for="saved-start">Horario de inicio</label>
+                <input id="saved-start" name="startTime" type="time" value="${escapeHTML(saved?.startTime || "07:00")}" required>
+              </div>
+              <div class="form-row" style="flex-direction: column; align-items: stretch; gap: 8px; padding: 12px 0;">
+                <label for="saved-end">Horario de fim</label>
+                <input id="saved-end" name="endTime" type="time" value="${escapeHTML(saved?.endTime || "19:00")}" required>
+              </div>
+            </div>
+          </div>
+          <div class="dialog-actions">
+            <button type="submit">Salvar alterações</button>
+            <button type="button" data-action="close-modal">Cancelar</button>
+          </div>
+        </form>
+      </div>`;
+    }
+    
+    return `<div class="modal-backdrop dialog-backdrop" role="presentation">
+      <section class="dialog saved-shifts-dialog" role="dialog" aria-modal="true" aria-label="Plantões salvos" style="max-height: 80dvh; overflow-y: auto;">
+        <div class="dialog-copy">
+          <h2>Plantões salvos</h2>
+          <p>Toque em um plantão para selecioná-lo. Toque no ícone de edição para alterar.</p>
+        </div>
+        <div style="padding: 0 16px 16px;">
+          <ul class="saved-shifts-list" style="margin: 0; padding: 0; list-style: none; background: var(--surface); border-radius: 12px; overflow: hidden;">${shiftRows}</ul>
+          <button type="button" class="text-button" data-action="new-saved-shift" style="margin-top: 12px; width: 100%; text-align: left;">${icon("plus")} Novo plantão salvo</button>
         </div>
       </section>
     </div>`;
@@ -721,6 +1013,13 @@
       renderModal();
       return;
     }
+    if (action === "toggle-theme") {
+      state.isDarkMode = !state.isDarkMode;
+      saveTheme(state.isDarkMode);
+      applyTheme(state.isDarkMode);
+      render();
+      return;
+    }
     if (action === "new-shift") {
       openShiftForm(target.dataset.day || state.selectedDay);
       return;
@@ -754,8 +1053,67 @@
       const sourceDay = target.dataset.day || state.selectedDay;
       const source = parseDateInput(sourceDay);
       if (!source || !shiftsForDay(sourceDay).length) return;
-      const nextMonth = new Date(source.getFullYear(), source.getMonth() + 1, source.getDate());
-      state.modal = { type: "copy", sourceDay, targetDay: dateKey(nextMonth) };
+      state.modal = { type: "copy", sourceDay, targetDays: [] };
+      renderModal();
+      return;
+    }
+    if (action === "toggle-copy-day") {
+      const day = target.dataset.day;
+      if (!day || day === state.modal.sourceDay) return;
+      const targetDays = state.modal.targetDays || [];
+      const index = targetDays.indexOf(day);
+      if (index === -1) {
+        targetDays.push(day);
+      } else {
+        targetDays.splice(index, 1);
+      }
+      state.modal.targetDays = targetDays;
+      renderModal();
+      return;
+    }
+    if (action === "open-saved-shifts") {
+      state.modal = { type: "saved-shifts" };
+      renderModal();
+      return;
+    }
+    if (action === "select-saved-shift") {
+      const index = Number(target.dataset.index);
+      const saved = state.savedShifts[index];
+      if (!saved) return;
+      // Fill the shift form with the saved shift data
+      const titleInput = document.getElementById("shift-title");
+      const startDateInput = document.getElementById("shift-start-date");
+      const startTimeInput = document.getElementById("shift-start-time");
+      const endDateInput = document.getElementById("shift-end-date");
+      const endTimeInput = document.getElementById("shift-end-time");
+      
+      if (titleInput) titleInput.value = saved.title;
+      if (startTimeInput) startTimeInput.value = saved.startTime;
+      if (endTimeInput) endTimeInput.value = saved.endTime;
+      
+      // Mark that this shift was selected from saved list (don't add to saved list again)
+      const form = document.getElementById("shift-form");
+      if (form) form.dataset.fromSavedList = "true";
+      
+      state.modal = null;
+      renderModal();
+      return;
+    }
+    if (action === "edit-saved-shift") {
+      const index = Number(target.dataset.index);
+      state.modal = { type: "saved-shifts", mode: "edit", editIndex: index };
+      renderModal();
+      return;
+    }
+    if (action === "delete-saved-shift") {
+      const index = Number(target.dataset.index);
+      state.savedShifts.splice(index, 1);
+      saveSavedShifts();
+      renderModal();
+      return;
+    }
+    if (action === "new-saved-shift") {
+      state.modal = { type: "saved-shifts", mode: "edit", editIndex: state.savedShifts.length };
       renderModal();
       return;
     }
@@ -813,14 +1171,18 @@
       event.preventDefault();
       repeatShifts(form);
     }
+    if (form.id === "saved-shift-form") {
+      event.preventDefault();
+      saveSavedShift(form);
+    }
   }
 
   function saveShift(form) {
     const data = new FormData(form);
     const title = String(data.get("title") || "").trim();
-    const amount = parseCurrencyInput(data.get("amount"));
-    const startsAt = parseDateTimeInput(data.get("startsAt"));
-    const endsAt = parseDateTimeInput(data.get("endsAt"));
+    const amount = parseCurrencyMasked(data.get("amount"));
+    const startsAt = parseDateTimeFromParts(data.get("startsAtDate"), data.get("startsAtTime"));
+    const endsAt = parseDateTimeFromParts(data.get("endsAtDate"), data.get("endsAtTime"));
 
     if (!title) {
       showToast("Informe uma descricao para o plantao.");
@@ -856,31 +1218,76 @@
     }
     state.shifts = sortShifts(state.shifts);
     persistShifts();
+    
+    // If this is a new shift (not from saved list), add to saved shifts list
+    if (!current && !form.dataset.fromSavedList) {
+      const startTime = timeFromISO(startsAt);
+      const endTime = timeFromISO(endsAt);
+      // Check if this exact combination already exists in saved shifts
+      const exists = state.savedShifts.some(s => s.title === title && s.startTime === startTime && s.endTime === endTime);
+      if (!exists) {
+        state.savedShifts.push({ title, startTime, endTime });
+        saveSavedShifts();
+      }
+    }
+    
     state.modal = null;
     render();
   }
 
-  function copyDay(form) {
-    const sourceDay = form.dataset.sourceDay;
-    const targetDay = String(new FormData(form).get("targetDay") || "");
-    const sourceShifts = shiftsForDay(sourceDay);
-    if (!isoForDay(targetDay) || !sourceShifts.length) {
-      showToast("Escolha uma data valida para copiar a escala.");
+  function saveSavedShift(form) {
+    const data = new FormData(form);
+    const title = String(data.get("title") || "").trim();
+    const startTime = String(data.get("startTime") || "").trim();
+    const endTime = String(data.get("endTime") || "").trim();
+    const index = Number(form.dataset.index);
+
+    if (!title || !startTime || !endTime) {
+      showToast("Preencha todos os campos.");
       return;
     }
 
-    const copied = sourceShifts.map((shift) => ({
-      ...shift,
-      id: uuid(),
-      day: isoForDay(targetDay),
-      startsAt: isoForDayAndTime(targetDay, timeFromISO(shift.startsAt)),
-      endsAt: isoForDayAndTime(targetDay, timeFromISO(shift.endsAt)),
-      isPaid: false
-    }));
+    const savedShift = { title, startTime, endTime };
+
+    if (index >= 0 && index < state.savedShifts.length) {
+      state.savedShifts[index] = savedShift;
+    } else {
+      state.savedShifts.push(savedShift);
+    }
+    saveSavedShifts();
+    state.modal = { type: "saved-shifts" };
+    renderModal();
+  }
+
+  function copyDay(form) {
+    const sourceDay = form.dataset.sourceDay;
+    const targetDaysInput = form.querySelector('input[name="targetDays"]');
+    const targetDays = targetDaysInput?.value ? targetDaysInput.value.split(",").filter(d => d) : [];
+    const sourceShifts = shiftsForDay(sourceDay);
+    if (!targetDays.length || !sourceShifts.length) {
+      showToast("Selecione pelo menos um dia para copiar a escala.");
+      return;
+    }
+
+    const copied = [];
+    for (const targetDay of targetDays) {
+      if (!isoForDay(targetDay)) continue;
+      for (const shift of sourceShifts) {
+        copied.push({
+          ...shift,
+          id: uuid(),
+          day: isoForDay(targetDay),
+          startsAt: isoForDayAndTime(targetDay, timeFromISO(shift.startsAt)),
+          endsAt: isoForDayAndTime(targetDay, timeFromISO(shift.endsAt)),
+          isPaid: false
+        });
+      }
+    }
     state.shifts = sortShifts([...state.shifts, ...copied]);
     persistShifts();
     state.modal = null;
     render();
+    showToast(`${copied.length} plantões copiados com sucesso.`);
   }
 
   function repeatShifts(form) {
@@ -1049,6 +1456,8 @@
     elements.importInput.value = "";
     importBackup(file);
   });
+
+  applyTheme(state.isDarkMode);
 
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     window.addEventListener("load", () => {

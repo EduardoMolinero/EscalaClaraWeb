@@ -25,6 +25,8 @@ body {
   margin: 0;
   background: #d9d9df;
   color: #151518;
+  overscroll-behavior: none;
+  touch-action: pan-y;
 }
 
 button,
@@ -54,6 +56,7 @@ textarea:focus-visible {
   padding-bottom: calc(78px + env(safe-area-inset-bottom));
   background: var(--page);
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .screen {
@@ -96,11 +99,13 @@ textarea:focus-visible {
   flex-direction: column;
   overflow: hidden;
   padding: 0 16px 16px;
+  overscroll-behavior: none;
 }
 
 .calendar-wrapper {
   flex-shrink: 0;
   padding: 8px 0 0;
+  overscroll-behavior: none;
 }
 
 .shifts-panel {
@@ -1085,6 +1090,91 @@ textarea:focus-visible {
 .toast.show {
   opacity: 1;
   transform: translate(-50%, 0);
+}
+
+.copy-dialog {
+  width: min(100%, 600px);
+  max-height: 90dvh;
+  overflow-y: auto;
+}
+
+.copy-calendar-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.copy-calendar h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: center;
+}
+
+.copy-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.copy-weekdays span {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.copy-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.copy-cal-empty {
+  min-height: 36px;
+}
+
+.copy-cal-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--accent);
+  transition: all 0.15s ease;
+}
+
+.copy-cal-day:hover,
+.copy-cal-day:focus-visible {
+  background: var(--secondary-fill);
+  border-color: var(--accent);
+}
+
+.copy-cal-day.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.copy-cal-day.has-shifts {
+  font-weight: 600;
+}
+
+.copy-cal-day.source-day {
+  border-color: var(--warning);
+  background: rgba(200, 109, 0, 0.1);
+}
+
+.copy-cal-day.source-day.selected {
+  background: var(--warning);
+  border-color: var(--warning);
 }
 
 @keyframes appear {
