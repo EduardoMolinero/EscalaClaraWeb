@@ -22,6 +22,13 @@
     year: "numeric"
   });
   const weekdayFormatter = new Intl.DateTimeFormat("pt-BR", { weekday: "short" });
+  const shiftDateTimeFormatter = new Intl.DateTimeFormat("pt-BR", {
+    weekday: "short",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
   const elements = {
@@ -36,6 +43,7 @@
     shifts: loadShifts(),
     tab: "calendar",
     displayedMonth: startOfMonth(new Date()),
+    selectedDay: dateKey(new Date()),
     modal: null,
     pendingArchive: null
   };
@@ -86,7 +94,8 @@
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
     if (!match) return null;
     const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-    return Number.isNaN(date.getTime()) ? null : date;
+    if (Number.isNaN(date.getTime()) || dateKey(date) !== value) return null;
+    return date;
   }
 
   function dateKey(date) {
@@ -112,6 +121,32 @@
     if (!date || !match) return null;
     date.setHours(Number(match[1]), Number(match[2]), 0, 0);
     return toSwiftISO(date);
+  }
+
+  function parseDateTimeInput(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(value));
+    if (!match) return null;
+    const date = new Date(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3]),
+      Number(match[4]),
+      Number(match[5])
+    );
+    const expectedDay = `${match[1]}-${match[2]}-${match[3]}`;
+    if (Number.isNaN(date.getTime()) || dateKey(date) !== expectedDay) return null;
+    return date;
+  }
+
+  function dateTimeLocalFromISO(value) {
+    const date = validDate(value);
+    if (!date) return "";
+    return `${dateKey(date)}T${timeFromISO(value)}`;
+  }
+
+  function dateTimeForDay(day, time) {
+    const value = isoForDayAndTime(day, time);
+    return value ? dateTimeLocalFromISO(value) : "";
   }
 
   function validDate(value) {
@@ -145,6 +180,11 @@
 
   function formatDate(date) {
     return dateFormatter.format(date);
+  }
+
+  function formatShiftDateTime(value) {
+    const date = validDate(value);
+    return date ? shiftDateTimeFormatter.format(date).replace(".", "") : "Data invalida";
   }
 
   function weekdayNames() {
@@ -296,20 +336,36 @@
         `<i class="color-dot" style="background:${shiftColor(shift)}"></i>`
       )).join("");
       const extra = shifts.length > 3 ? `<span class="extra-dots">+${shifts.length - 3}</span>` : "";
-      const amount = shifts.length ? `<span class="day-total">${formatMoney(totals(shifts).total)}</span>` : "";
-      const classes = ["day-cell", shifts.length ? "has-shifts" : "", day === today ? "today" : ""].filter(Boolean).join(" ");
+      const classes = ["day-cell", shifts.length ? "has-shifts" : "", day === today ? "today" : "", day === state.selectedDay ? "selected" : ""].filter(Boolean).join(" ");
       const label = shifts.length
         ? `${formatDate(date)}, ${shifts.length} plantao(s)`
         : formatDate(date);
-      return `<button class="${classes}" data-action="open-day" data-day="${day}" aria-label="${escapeHTML(label)}">
+      return `<button class="${classes}" data-action="select-day" data-day="${day}" aria-label="${escapeHTML(label)}">
         <span class="day-number">${date.getDate()}</span>
         <span class="color-dots">${dots}${extra}</span>
-        ${amount}
       </button>`;
     }).join("");
 
+    const selectedShifts = shiftsForDay(state.selectedDay);
+    const shiftRows = selectedShifts.length ? selectedShifts.map((shift) => `
+      <li class="shift-row">
+        <div class="shift-info">
+          <strong>${escapeHTML(shift.title)}</strong>
+          <span>${formatShiftDateTime(shift.startsAt)} - ${formatShiftDateTime(shift.endsAt)}</span>
+        </div>
+        <div class="shift-value">
+          <strong>${formatMoney(shift.amount)}</strong>
+          <span class="payment-badge ${shift.isPaid ? "paid" : "unpaid"}">${shift.isPaid ? "PAGO" : "PENDENTE"}</span>
+        </div>
+        <div class="shift-actions">
+          <button class="row-action" data-action="toggle-paid" data-id="${shift.id}" aria-label="${shift.isPaid ? "Marcar pendente" : "Marcar pago"}">${icon(shift.isPaid ? "undo" : "check")}</button>
+          <button class="row-action delete" data-action="confirm-delete" data-id="${shift.id}" aria-label="Excluir ${escapeHTML(shift.title)}">${icon("trash")}</button>
+        </div>
+      </li>
+    `).join("") : `<li class="empty-shifts">${icon("emptyCalendar")}<span>Nenhum plantao neste dia</span></li>`;
+
     return `<section class="screen">
-      ${renderScreenHeader("Minha escala", `<button class="icon-button" data-action="new-shift" aria-label="Novo plantao">${icon("plus")}</button>`)}
+      ${renderScreenHeader("Minha escala", `<button class="icon-button" data-action="new-shift" data-day="${state.selectedDay}" aria-label="Novo plantao">${icon("plus")}</button>`)}
       <div class="content">
         <section class="calendar-card" aria-label="Calendario mensal">
           <div class="month-controls">
@@ -320,10 +376,13 @@
           <div class="weekday-grid">${weekdays}</div>
           <div class="calendar-grid">${dayCells}</div>
         </section>
-        <aside class="legend-card">
-          <span class="inline-icon">${icon("palette")}</span>
-          <p>Cada plantao pode ter uma cor livre. Toque em um dia para ver, editar, pagar ou repetir a escala.</p>
-        </aside>
+        <section class="shifts-panel" aria-label="Plantões do dia selecionado">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin: 8px 16px 4px;">
+            <h2 class="section-title" style="margin: 0; text-align: center; flex: 1;">${formatDayTitle(parseDateInput(state.selectedDay))}</h2>
+            <button class="icon-button" data-action="open-repeat" data-day="${state.selectedDay}" aria-label="Repetir plantões" ${selectedShifts.length ? "" : "disabled"}>${icon("copy")}</button>
+          </div>
+          <ul class="shifts-list">${shiftRows}</ul>
+        </section>
       </div>
     </section>`;
   }
@@ -424,10 +483,6 @@
       return;
     }
 
-    if (state.modal.type === "day") {
-      elements.modalRoot.innerHTML = renderDaySheet(state.modal.day);
-      return;
-    }
     if (state.modal.type === "shift-form") {
       elements.modalRoot.innerHTML = renderShiftForm(state.modal);
       return;
@@ -436,50 +491,17 @@
       elements.modalRoot.innerHTML = renderCopyDialog(state.modal);
       return;
     }
+    if (state.modal.type === "repeat") {
+      elements.modalRoot.innerHTML = renderRepeatDialog(state.modal);
+      return;
+    }
+    if (state.modal.type === "confirm-delete") {
+      elements.modalRoot.innerHTML = renderConfirmDeleteDialog(state.modal);
+      return;
+    }
     if (state.modal.type === "import") {
       elements.modalRoot.innerHTML = renderImportDialog();
     }
-  }
-
-  function renderDaySheet(day) {
-    const sourceDay = parseDateInput(day);
-    const shifts = shiftsForDay(day);
-    const dayTotals = totals(shifts);
-    const shiftRows = shifts.length ? shifts.map((shift) => `<li class="shift-row">
-      <button class="shift-edit-button" data-action="edit-shift" data-id="${shift.id}" aria-label="Editar ${escapeHTML(shift.title)}">
-        <span class="shift-accent" style="background:${shiftColor(shift)}"></span>
-        <span class="shift-info"><strong>${escapeHTML(shift.title)}</strong><span>${timeFromISO(shift.startsAt)} - ${timeFromISO(shift.endsAt)}</span></span>
-        <span class="shift-value"><strong>${formatMoney(shift.amount)}</strong><span class="payment-badge ${shift.isPaid ? "paid" : "unpaid"}">${shift.isPaid ? "PAGO" : "PENDENTE"}</span></span>
-      </button>
-      <span class="shift-actions">
-        <button class="row-action" data-action="toggle-paid" data-id="${shift.id}" aria-label="${shift.isPaid ? "Marcar pendente" : "Marcar pago"}">${icon(shift.isPaid ? "undo" : "check")}</button>
-        <button class="row-action delete" data-action="delete-shift" data-id="${shift.id}" aria-label="Apagar ${escapeHTML(shift.title)}">${icon("trash")}</button>
-      </span>
-    </li>`).join("") : renderEmptyState("emptyCalendar", "Nenhum plantao neste dia", "Adicione um plantao ou copie uma escala existente.");
-
-    return `<div class="modal-backdrop" role="presentation">
-      <section class="sheet" role="dialog" aria-modal="true" aria-label="Detalhes do dia">
-        <header class="sheet-header">
-          <span class="header-left"><button class="text-button" data-action="close-modal">Fechar</button></span>
-          <h2>${sourceDay ? escapeHTML(formatDayTitle(sourceDay)) : "Plantões"}</h2>
-          <span class="header-right">
-            <button class="icon-button" data-action="open-copy" data-day="${day}" aria-label="Copiar escala" ${shifts.length ? "" : "disabled"}>${icon("copy")}</button>
-            <button class="icon-button" data-action="new-shift" data-day="${day}" aria-label="Novo plantao">${icon("plus")}</button>
-          </span>
-        </header>
-        <div class="sheet-content">
-          <h3 class="section-title">Resumo</h3>
-          <div class="detail-summary">
-            <div class="detail-row"><span>Plantões</span><span>${shifts.length}</span></div>
-            <div class="detail-row"><span>Total</span><span>${formatMoney(dayTotals.total)}</span></div>
-            <div class="detail-row"><span>Recebido</span><span>${formatMoney(dayTotals.paid)}</span></div>
-            <div class="detail-row"><span>A receber</span><span>${formatMoney(dayTotals.unpaid)}</span></div>
-          </div>
-          <h3 class="section-title">Plantões</h3>
-          <ul class="day-list">${shiftRows}</ul>
-        </div>
-      </section>
-    </div>`;
   }
 
   function renderShiftForm(modal) {
@@ -508,9 +530,8 @@
               <h3 class="section-title">Plantao</h3>
               <div class="form-list">
                 <div class="form-row"><label for="shift-title">Descricao</label><input id="shift-title" name="title" value="${escapeHTML(defaults.title)}" autocomplete="off" required></div>
-                <div class="form-row"><label for="shift-day">Data</label><input id="shift-day" name="day" type="date" value="${day}" required></div>
-                <div class="form-row"><label for="shift-start">Inicio</label><input id="shift-start" name="startsAt" type="time" value="${timeFromISO(defaults.startsAt)}" required></div>
-                <div class="form-row"><label for="shift-end">Fim</label><input id="shift-end" name="endsAt" type="time" value="${timeFromISO(defaults.endsAt)}" required></div>
+                <div class="form-row"><label for="shift-start">Inicio</label><input id="shift-start" name="startsAt" type="datetime-local" value="${dateTimeLocalFromISO(defaults.startsAt)}" required></div>
+                <div class="form-row"><label for="shift-end">Fim</label><input id="shift-end" name="endsAt" type="datetime-local" value="${dateTimeLocalFromISO(defaults.endsAt)}" required></div>
               </div>
             </section>
             <section class="form-section">
@@ -566,6 +587,80 @@
     </div>`;
   }
 
+  function renderConfirmDeleteDialog(modal) {
+    const shift = state.shifts.find((s) => s.id === modal.shiftId);
+    const title = shift ? escapeHTML(shift.title) : "este plantão";
+    return `<div class="modal-backdrop dialog-backdrop" role="presentation">
+      <section class="dialog" role="dialog" aria-modal="true" aria-label="Confirmar exclusao">
+        <div class="dialog-copy">
+          <h2>Excluir plantao</h2>
+          <p>Tem certeza que deseja excluir <strong>${title}</strong>? Esta acao nao pode ser desfeita.</p>
+        </div>
+        <div class="dialog-actions">
+          <button class="destructive" data-action="delete-shift" data-id="${modal.shiftId}">Excluir</button>
+          <button data-action="close-modal">Cancelar</button>
+        </div>
+      </section>
+    </div>`;
+  }
+
+  function renderRepeatDialog(modal) {
+    const sourceDay = parseDateInput(modal.sourceDay);
+    const sourceShifts = shiftsForDay(modal.sourceDay);
+    const weekdayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
+    const today = new Date();
+    const sourceWeekday = sourceDay.getDay();
+    
+    // Generate future dates for the next 12 weeks for each weekday
+    const futureDates = [];
+    for (let week = 1; week <= 12; week++) {
+      for (let wd = 0; wd < 7; wd++) {
+        const daysToAdd = (wd - sourceWeekday + 7) % 7 + week * 7;
+        const date = new Date(sourceDay);
+        date.setDate(sourceDay.getDate() + daysToAdd);
+        if (date > today) {
+          const key = dateKey(date);
+          if (!futureDates.some(d => d.key === key)) {
+            futureDates.push({ key, date, weekday: wd });
+          }
+        }
+      }
+    }
+    // Group by weekday
+    const datesByWeekday = {};
+    for (const item of futureDates) {
+      if (!datesByWeekday[item.weekday]) datesByWeekday[item.weekday] = [];
+      if (datesByWeekday[item.weekday].length < 4) {
+        datesByWeekday[item.weekday].push(item);
+      }
+    }
+
+    const weekdayOptions = Object.entries(datesByWeekday).map(([wd, dates]) => {
+      const selected = modal.weekdays.includes(Number(wd)) ? "selected" : "";
+      const dateLabels = dates.map(d => formatDate(d.date)).join(", ");
+      return `<label class="weekday-option ${selected}" data-weekday="${wd}" data-action="toggle-weekday">
+        <span class="weekday-name">${weekdayNames[Number(wd)]}</span>
+        <span class="weekday-dates">${dateLabels}</span>
+      </label>`;
+    }).join("");
+
+    return `<div class="modal-backdrop dialog-backdrop" role="presentation">
+      <form class="dialog" id="repeat-form" data-source-day="${modal.sourceDay}" role="dialog" aria-modal="true" aria-label="Repetir plantões">
+        <div class="dialog-copy">
+          <h2>Repetir plantões</h2>
+          <p>Selecione os dias da semana para repetir os <strong>${sourceShifts.length}</strong> plantões de ${formatDayTitle(sourceDay)}. As datas futuras serao criadas automaticamente.</p>
+        </div>
+        <div class="weekday-selector">
+          ${weekdayOptions}
+        </div>
+        <div class="dialog-actions">
+          <button type="submit">Repetir em dias selecionados</button>
+          <button type="button" data-action="close-modal">Cancelar</button>
+        </div>
+      </form>
+    </div>`;
+  }
+
   function showToast(message) {
     clearTimeout(toastTimer);
     elements.toast.textContent = message;
@@ -598,9 +693,10 @@
       render();
       return;
     }
-    if (action === "open-day") {
-      state.modal = { type: "day", day: target.dataset.day };
-      renderModal();
+    if (action === "select-day") {
+      state.selectedDay = target.dataset.day;
+      state.modal = null;
+      render();
       return;
     }
     if (action === "close-modal") {
@@ -609,7 +705,7 @@
       return;
     }
     if (action === "new-shift") {
-      openShiftForm(target.dataset.day || dateKey(new Date()));
+      openShiftForm(target.dataset.day || state.selectedDay);
       return;
     }
     if (action === "edit-shift") {
@@ -625,6 +721,11 @@
       render();
       return;
     }
+    if (action === "confirm-delete") {
+      state.modal = { type: "confirm-delete", shiftId: target.dataset.id };
+      renderModal();
+      return;
+    }
     if (action === "delete-shift") {
       state.shifts = state.shifts.filter((shift) => shift.id !== target.dataset.id);
       persistShifts();
@@ -632,11 +733,19 @@
       return;
     }
     if (action === "open-copy") {
-      const sourceDay = target.dataset.day;
+      const sourceDay = target.dataset.day || state.selectedDay;
       const source = parseDateInput(sourceDay);
       if (!source || !shiftsForDay(sourceDay).length) return;
       const nextMonth = new Date(source.getFullYear(), source.getMonth() + 1, source.getDate());
       state.modal = { type: "copy", sourceDay, targetDay: dateKey(nextMonth) };
+      renderModal();
+      return;
+    }
+    if (action === "open-repeat") {
+      const sourceDay = target.dataset.day || state.selectedDay;
+      const source = parseDateInput(sourceDay);
+      if (!source || !shiftsForDay(sourceDay).length) return;
+      state.modal = { type: "repeat", sourceDay, weekdays: [] };
       renderModal();
       return;
     }
@@ -657,6 +766,18 @@
       state.modal = null;
       renderModal();
     }
+    if (action === "toggle-weekday") {
+      const option = target.closest(".weekday-option");
+      if (option) {
+        option.classList.toggle("selected");
+        const dialog = option.closest("#repeat-form");
+        if (dialog) {
+          const weekdays = [...dialog.querySelectorAll(".weekday-option.selected")].map(el => Number(el.dataset.weekday));
+          state.modal.weekdays = weekdays;
+        }
+      }
+      return;
+    }
   }
 
   function handleSubmit(event) {
@@ -670,15 +791,18 @@
       event.preventDefault();
       copyDay(form);
     }
+    if (form.id === "repeat-form") {
+      event.preventDefault();
+      repeatShifts(form);
+    }
   }
 
   function saveShift(form) {
     const data = new FormData(form);
     const title = String(data.get("title") || "").trim();
     const amount = Number(String(data.get("amount") || "").replace(",", "."));
-    const day = String(data.get("day") || "");
-    const startsAt = isoForDayAndTime(day, data.get("startsAt"));
-    const endsAt = isoForDayAndTime(day, data.get("endsAt"));
+    const startsAt = parseDateTimeInput(data.get("startsAt"));
+    const endsAt = parseDateTimeInput(data.get("endsAt"));
 
     if (!title) {
       showToast("Informe uma descricao para o plantao.");
@@ -688,8 +812,8 @@
       showToast("O valor do plantao nao pode ser negativo.");
       return;
     }
-    if (!isoForDay(day) || !startsAt || !endsAt) {
-      showToast("Informe uma data e horarios validos.");
+    if (!startsAt || !endsAt) {
+      showToast("Informe data e horarios validos para inicio e fim.");
       return;
     }
 
@@ -697,10 +821,10 @@
     const current = form.dataset.id ? state.shifts.find((shift) => shift.id === form.dataset.id) : null;
     const shift = {
       id: current?.id || uuid(),
-      day: isoForDay(day),
+      day: toSwiftISO(localStartOfDay(startsAt)),
       title,
-      startsAt,
-      endsAt,
+      startsAt: toSwiftISO(startsAt),
+      endsAt: toSwiftISO(endsAt),
       amount,
       isPaid: data.get("isPaid") === "on",
       notes: String(data.get("notes") || "").trim(),
@@ -737,8 +861,64 @@
     }));
     state.shifts = sortShifts([...state.shifts, ...copied]);
     persistShifts();
-    state.modal = { type: "day", day: targetDay };
+    state.modal = null;
     render();
+  }
+
+  function repeatShifts(form) {
+    const sourceDay = form.dataset.sourceDay;
+    const sourceShifts = shiftsForDay(sourceDay);
+    if (!sourceShifts.length) {
+      showToast("Nenhum plantao para repetir.");
+      return;
+    }
+
+    const selectedWeekdays = [...form.querySelectorAll(".weekday-option.selected")].map(el => Number(el.dataset.weekday));
+    if (selectedWeekdays.length === 0) {
+      showToast("Selecione pelo menos um dia da semana.");
+      return;
+    }
+
+    const sourceDate = parseDateInput(sourceDay);
+    const today = new Date();
+    const copied = [];
+
+    for (const targetWeekday of selectedWeekdays) {
+      for (let week = 1; week <= 12; week++) {
+        const daysToAdd = (targetWeekday - sourceDate.getDay() + 7) % 7 + week * 7;
+        const targetDate = new Date(sourceDate);
+        targetDate.setDate(sourceDate.getDate() + daysToAdd);
+        if (targetDate <= today) continue;
+        
+        const targetDay = dateKey(targetDate);
+        // Check if shift already exists on this day
+        const exists = state.shifts.some(s => dateFromISO(s.day) === targetDay && 
+          sourceShifts.some(ss => ss.title === s.title && ss.startsAt === s.startsAt));
+        if (exists) continue;
+
+        for (const shift of sourceShifts) {
+          copied.push({
+            ...shift,
+            id: uuid(),
+            day: isoForDay(targetDay),
+            startsAt: isoForDayAndTime(targetDay, timeFromISO(shift.startsAt)),
+            endsAt: isoForDayAndTime(targetDay, timeFromISO(shift.endsAt)),
+            isPaid: false
+          });
+        }
+      }
+    }
+
+    if (copied.length === 0) {
+      showToast("Nenhum novo plantao criado (ja existem ou datas passadas).");
+      return;
+    }
+
+    state.shifts = sortShifts([...state.shifts, ...copied]);
+    persistShifts();
+    state.modal = null;
+    render();
+    showToast(`${copied.length} plantões criados com sucesso.`);
   }
 
   function archiveForExport() {
