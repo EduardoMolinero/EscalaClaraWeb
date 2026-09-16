@@ -455,11 +455,19 @@
     }).join("");
 
     const selectedShifts = shiftsForDay(state.selectedDay);
-    const shiftRows = selectedShifts.length ? selectedShifts.map((shift) => `
+    const shiftRows = selectedShifts.length ? selectedShifts.map((shift) => {
+      const startDate = validDate(shift.startsAt);
+      const endDate = validDate(shift.endsAt);
+      const startDay = startDate ? `${String(startDate.getDate()).padStart(2, "0")}/${String(startDate.getMonth() + 1).padStart(2, "0")}` : "";
+      const startTime = startDate ? `${String(startDate.getHours()).padStart(2, "0")}:${String(startDate.getMinutes()).padStart(2, "0")}` : "";
+      const endDay = endDate ? `${String(endDate.getDate()).padStart(2, "0")}/${String(endDate.getMonth() + 1).padStart(2, "0")}` : "";
+      const endTime = endDate ? `${String(endDate.getHours()).padStart(2, "0")}:${String(endDate.getMinutes()).padStart(2, "0")}` : "";
+      return `
       <li class="shift-row" data-action="edit-shift" data-id="${shift.id}" tabindex="0" role="button" aria-label="Editar ${escapeHTML(shift.title)}">
         <div class="shift-info">
           <strong>${escapeHTML(shift.title)}</strong>
-          <span>${formatShiftDateTime(shift.startsAt)} - ${formatShiftDateTime(shift.endsAt)}</span>
+          <span>${startDay}, ${startTime}</span>
+          <span>${endDay}, ${endTime}</span>
         </div>
         <div class="shift-value">
           <strong>${formatMoney(shift.amount)}</strong>
@@ -469,8 +477,8 @@
           <button class="row-action" data-action="toggle-paid" data-id="${shift.id}" aria-label="${shift.isPaid ? "Marcar pendente" : "Marcar pago"}">${icon(shift.isPaid ? "undo" : "check")}</button>
           <button class="row-action delete" data-action="confirm-delete" data-id="${shift.id}" aria-label="Excluir ${escapeHTML(shift.title)}">${icon("trash")}</button>
         </div>
-      </li>
-    `).join("") : `<li class="empty-shifts">${icon("emptyCalendar")}<span>Nenhum plantao neste dia</span></li>`;
+      </li>`;
+    }).join("") : `<li class="empty-shifts">${icon("emptyCalendar")}<span>Nenhum plantao neste dia</span></li>`;
 
     return `<section class="screen">
       ${renderScreenHeader("Minha escala", `<button class="icon-button" data-action="toggle-theme" aria-label="${state.isDarkMode ? "Tema claro" : "Tema escuro"}">${icon(state.isDarkMode ? "sun" : "moon")}</button><button class="icon-button" data-action="new-shift" data-day="${state.selectedDay}" aria-label="Novo plantao">${icon("plus")}</button>`)}
@@ -506,9 +514,6 @@
     });
     const monthTotals = totals(monthShifts);
 
-    const nextMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
-    const now = new Date();
-    const isCurrentOrFuture = nextMonth.getFullYear() > now.getFullYear() || (nextMonth.getFullYear() === now.getFullYear() && nextMonth.getMonth() > now.getMonth());
     const showShifts = monthShifts.length ? monthShifts.map((shift) => {
       const date = validDate(shift.day);
       const startTime = timeFromISO(shift.startsAt);
@@ -531,7 +536,7 @@
         <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 0;">
           <button class="icon-button" data-action="summary-prev-month" aria-label="Mes anterior">${icon("chevronLeft")}</button>
           <strong style="font-size: 18px;">${formatMonth(currentMonth)}</strong>
-          <button class="icon-button" data-action="summary-next-month" aria-label="Mes seguinte" ${isCurrentOrFuture ? "disabled" : ""}>${icon("chevronRight")}</button>
+          <button class="icon-button" data-action="summary-next-month" aria-label="Mes seguinte">${icon("chevronRight")}</button>
         </div>
         <section class="summary-cards" aria-label="Resumo do mes">
           <article class="amount-card"><span>TOTAL</span><strong>${formatMoney(monthTotals.total)}</strong></article>
